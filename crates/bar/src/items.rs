@@ -67,11 +67,6 @@ pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
                 None => r.name.clone(),
             };
             let (value, style, state) = match &r.level {
-                Level::Percent(p) if r.approx => (
-                    format!("{charging}~{p}%"),
-                    Style::Dim,
-                    format!("~{p}%: last reading before charging started (this device doesn't report its level while it charges)"),
-                ),
                 Level::Percent(p) => {
                     let style = if stale {
                         Style::Dim
@@ -212,7 +207,6 @@ mod tests {
             charging: None,
             connected,
             source: "test".into(),
-            approx: false,
         }
     }
 

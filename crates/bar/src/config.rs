@@ -219,10 +219,6 @@ pub struct Reading {
     pub charging: Option<bool>,
     pub connected: Option<bool>,
     pub source: String,
-    /// The percentage is the last one read before charging started (the device reports no
-    /// level while it charges), not a live reading.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub approx: bool,
 }
 
 fn provider_source() -> KindSource {
@@ -241,7 +237,6 @@ impl From<Battery> for Reading {
             charging: b.charging,
             connected: b.connected,
             source: b.source.to_string(),
-            approx: false,
         }
     }
 }
