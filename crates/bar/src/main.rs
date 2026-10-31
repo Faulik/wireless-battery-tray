@@ -8,6 +8,7 @@ mod config;
 mod items;
 mod poller;
 mod render;
+mod settings;
 mod strip;
 mod taskbar;
 mod tray;
@@ -22,8 +23,8 @@ use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_R
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, PostMessageW,
-    PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SetTimer, TranslateMessage, CS_DBLCLKS, MSG,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, PostQuitMessage,
+    SetForegroundWindow, ShowWindow, SW_RESTORE, RegisterClassExW, RegisterWindowMessageW, SetTimer, TranslateMessage, CS_DBLCLKS, MSG,
     WINDOW_EX_STYLE, WM_APP, WM_DISPLAYCHANGE, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
     WS_OVERLAPPED,
 };
@@ -58,8 +59,12 @@ thread_local! {
 }
 
 fn main() {
-    if std::env::args().any(|a| a == "--settings") {
-        // Filled in by the settings milestone.
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--settings") {
+        let notify = args.iter().position(|a| a == "--notify").and_then(|i| args.get(i + 1)).and_then(|h| h.parse().ok());
+        if let Err(e) = settings::run(notify) {
+            eprintln!("batteries-bar: {e:#}");
+        }
         return;
     }
     if let Err(e) = run() {
@@ -75,7 +80,7 @@ fn run() -> Result<()> {
         if GetLastError() == ERROR_ALREADY_EXISTS {
             return Ok(());
         }
-        InitCommonControlsEx(&INITCOMMONCONTROLSEX {
+        let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX {
             dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
             dwICC: ICC_WIN95_CLASSES,
         });
@@ -181,7 +186,7 @@ impl App {
                 self.rebuild_menu();
                 self.refresh();
             }
-            WM_LBUTTONDBLCLK if is_strip => open_settings(),
+            WM_LBUTTONDBLCLK if is_strip => open_settings(self.msg_hwnd),
             WM_RBUTTONUP if is_strip => {
                 use tray_icon::menu::ContextMenu;
                 // SAFETY: our strip window; the menu is modal on this thread.
@@ -201,7 +206,7 @@ impl App {
 
     fn on_action(&mut self, action: Action) {
         match action {
-            Action::Settings => open_settings(),
+            Action::Settings => open_settings(self.msg_hwnd),
             Action::Refresh => self.poller.send(Command::RefreshNow),
             Action::Monitor(name) => {
                 self.cfg.monitor = Some(name);
@@ -293,7 +298,7 @@ impl App {
 }
 
 /// Windows "system" (taskbar) theme: SystemUsesLightTheme = 0 means dark.
-fn system_dark() -> bool {
+pub fn system_dark() -> bool {
     let mut value = 1u32;
     let mut size = 4u32;
     // SAFETY: DWORD out-buffer of the declared size.
@@ -311,20 +316,18 @@ fn system_dark() -> bool {
     err.is_err() || value == 0
 }
 
-fn open_settings() {
-    // Already open? The settings process brings itself forward on a second launch.
-    let _ = unsafe { FindWindowW(PCWSTR::null(), w!("Battery bar settings")) };
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).arg("--settings").spawn();
-    }
-}
-
-#[allow(dead_code)]
-fn post_reload() {
-    // SAFETY: plain lookups/posts.
+fn open_settings(msg_hwnd: HWND) {
+    // Already open: bring it forward instead of starting a second one.
+    let title: Vec<u16> = settings::TITLE.encode_utf16().chain(Some(0)).collect();
+    // SAFETY: plain window lookup/activation.
     unsafe {
-        if let Ok(h) = FindWindowW(MSG_CLASS, PCWSTR::null()) {
-            let _ = PostMessageW(h, WM_RELOAD, WPARAM(0), LPARAM(0));
+        if let Ok(h) = FindWindowW(PCWSTR::null(), PCWSTR(title.as_ptr())) {
+            let _ = ShowWindow(h, SW_RESTORE);
+            let _ = SetForegroundWindow(h);
+            return;
         }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).args(["--settings", "--notify", &(msg_hwnd.0 as isize).to_string()]).spawn();
     }
 }

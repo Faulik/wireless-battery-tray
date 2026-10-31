@@ -55,7 +55,7 @@ pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
                     let state = if stale { format!("{p}% (last known)") } else { format!("{p}%") };
                     (format!("{label} {charging}{p}%"), style, state)
                 }
-                Level::Coarse(s) => (format!("{label} {s}"), Style::Normal, s.clone()),
+                Level::Coarse(s) => (format!("{label} {charging}{s}"), Style::Normal, s.clone()),
                 Level::Unavailable(why) => {
                     if !cfg.show_offline {
                         continue;

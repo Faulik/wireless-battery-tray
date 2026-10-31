@@ -175,9 +175,6 @@ impl Strip {
         }
     }
 
-    pub fn parented(&self) -> bool {
-        self.parented
-    }
 }
 
 impl Drop for Strip {

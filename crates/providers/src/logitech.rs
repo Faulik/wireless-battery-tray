@@ -104,9 +104,15 @@ impl Receiver {
         }
         if let Some(f) = self.feature(index, FEAT_BATTERY_STATUS)? {
             if let Reply::Ok(r) = self.request(index, f, 0, &[])? {
-                // get_battery_level_status: [level %, next level %, status]
+                // get_battery_level_status: [level %, next level %, status]. Level 0 means
+                // "unknown" (Solaar does the same); MX Master 3 reports it while charging.
                 let charging = matches!(r[6], 1 | 2 | 4);
-                return Ok((Level::Percent(r[4].min(100)), Some(charging)));
+                let level = match r[4] {
+                    0 if charging => Level::Coarse("charging".into()),
+                    0 => Level::Unavailable("level unknown".into()),
+                    pct => Level::Percent(pct.min(100)),
+                };
+                return Ok((level, Some(charging)));
             }
         }
         if let Some(f) = self.feature(index, FEAT_BATTERY_VOLTAGE)? {

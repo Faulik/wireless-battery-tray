@@ -67,7 +67,6 @@ pub struct Taskbar {
     pub hwnd: HWND,
     /// Screen rect, physical pixels.
     pub rect: RECT,
-    pub primary: bool,
     pub dpi: u32,
     /// Screen x where the free area on the right ends (tray / clock start).
     pub free_right: i32,
@@ -110,7 +109,7 @@ pub fn taskbar_for(monitor: &Monitor) -> Option<Taskbar> {
     } else {
         rect.right - SECONDARY_CLOCK_DIP * dpi as i32 / 96
     };
-    Some(Taskbar { hwnd, rect, primary, dpi, free_right })
+    Some(Taskbar { hwnd, rect, dpi, free_right })
 }
 
 impl Taskbar {
