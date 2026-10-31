@@ -37,7 +37,7 @@ pub fn install_handlers(hwnd: HWND, msg: u32) {
         // SAFETY: posting is safe for any handle value.
         let _ = unsafe { PostMessageW(HWND(h as _), msg, WPARAM(0), LPARAM(0)) };
     };
-    let post2 = post.clone();
+    let post2 = post;
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         if let Some(a) = parse(e.id.as_ref()) {
             post(a);
