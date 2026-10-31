@@ -8,7 +8,7 @@ taskbar of the monitor you choose.
 
 <p align="center"><img src="docs/strip.png" alt="The strip on the taskbar: earbuds 80%, mouse 100%, headset charging at 75%"></p>
 
-**[Website](https://faulik.github.io/wireless-battery-tray/)** ·
+**[Website](https://battery.faulcloud.work/)** ·
 **[Download](https://github.com/Faulik/wireless-battery-tray/releases/latest)**
 
 ## Features
