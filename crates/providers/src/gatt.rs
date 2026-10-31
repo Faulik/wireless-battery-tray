@@ -11,9 +11,7 @@
 
 use anyhow::Result;
 use battery_core::{Battery, Kind, KindSource, Level, Provider};
-use windows::Devices::Bluetooth::GenericAttributeProfile::{
-    GattCharacteristicUuids, GattCommunicationStatus, GattServiceUuids, GattSession,
-};
+use windows::Devices::Bluetooth::GenericAttributeProfile::{GattCharacteristicUuids, GattCommunicationStatus, GattServiceUuids, GattSession};
 use windows::Devices::Bluetooth::{BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice};
 use windows::Devices::Enumeration::DeviceInformation;
 use windows::Storage::Streams::DataReader;
@@ -57,24 +55,16 @@ fn read_device(dev: &BluetoothLEDevice) -> Result<Vec<Battery>> {
         None
     };
 
-    let services = dev
-        .GetGattServicesForUuidWithCacheModeAsync(GattServiceUuids::Battery()?, BluetoothCacheMode::Cached)?
-        .get()?;
+    let services = dev.GetGattServicesForUuidWithCacheModeAsync(GattServiceUuids::Battery()?, BluetoothCacheMode::Cached)?.get()?;
     if services.Status()? != GattCommunicationStatus::Success {
         debug!("gatt: {name} battery service discovery: {:?}", services.Status()?);
         return Ok(Vec::new());
     }
 
-    let modes: &[BluetoothCacheMode] = if connected {
-        &[BluetoothCacheMode::Uncached, BluetoothCacheMode::Cached]
-    } else {
-        &[BluetoothCacheMode::Cached]
-    };
+    let modes: &[BluetoothCacheMode] = if connected { &[BluetoothCacheMode::Uncached, BluetoothCacheMode::Cached] } else { &[BluetoothCacheMode::Cached] };
     let mut levels = Vec::new();
     for service in services.Services()? {
-        let chars = service
-            .GetCharacteristicsForUuidWithCacheModeAsync(GattCharacteristicUuids::BatteryLevel()?, BluetoothCacheMode::Cached)?
-            .get()?;
+        let chars = service.GetCharacteristicsForUuidWithCacheModeAsync(GattCharacteristicUuids::BatteryLevel()?, BluetoothCacheMode::Cached)?.get()?;
         if chars.Status()? != GattCommunicationStatus::Success {
             continue;
         }

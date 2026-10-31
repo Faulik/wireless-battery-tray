@@ -12,21 +12,22 @@ mod settings;
 mod strip;
 mod taskbar;
 mod tray;
+mod updater;
 
 use std::cell::RefCell;
+use std::time::Duration;
 
 use anyhow::Result;
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, PostQuitMessage,
-    SetForegroundWindow, ShowWindow, SW_RESTORE, RegisterClassExW, RegisterWindowMessageW, SetTimer, TranslateMessage, CS_DBLCLKS, MSG,
-    WINDOW_EX_STYLE, WM_APP, WM_DISPLAYCHANGE, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
-    WS_OVERLAPPED,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, MessageBoxW, PostQuitMessage, RegisterClassExW,
+    RegisterWindowMessageW, SetForegroundWindow, SetTimer, ShowWindow, TranslateMessage, CS_DBLCLKS, MB_ICONWARNING, MB_OK, MSG, SW_RESTORE, WINDOW_EX_STYLE,
+    WM_APP, WM_DISPLAYCHANGE, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
 use config::{Config, Reading};
@@ -34,6 +35,7 @@ use poller::{Command, Poller};
 use render::D2dPainter;
 use strip::Strip;
 use tray::Action;
+use updater::Updater;
 
 pub const MSG_CLASS: PCWSTR = w!("BatteriesBarMsg");
 const WM_POLLED: u32 = WM_APP + 1;
@@ -42,6 +44,11 @@ const WM_TRAY: u32 = WM_APP + 2;
 pub const WM_RELOAD: u32 = WM_APP + 3;
 /// Sent by the settings process: WPARAM = 1-based index of the device to outline, 0 = none.
 pub const WM_HIGHLIGHT: u32 = WM_APP + 4;
+const WM_UPDATER: u32 = WM_APP + 5;
+/// Sent by the settings process: check for updates now.
+pub const WM_CHECK_UPDATES: u32 = WM_APP + 6;
+/// Sent by the settings process: install the available update.
+pub const WM_INSTALL_UPDATE: u32 = WM_APP + 7;
 const TIMER_PLACE: usize = 1;
 
 struct App {
@@ -50,6 +57,7 @@ struct App {
     readings: Vec<Reading>,
     strip: Option<Strip>,
     poller: Poller,
+    updater: Updater,
     tray: tray_icon::TrayIcon,
     menu: tray_icon::menu::Menu,
     taskbar_created: u32,
@@ -79,14 +87,25 @@ fn main() {
 fn run() -> Result<()> {
     // SAFETY: Win32 setup on the UI thread.
     unsafe {
-        let _mutex = CreateMutexW(None, true, w!("Local\\BatteriesBarSingleInstance"))?;
-        if GetLastError() == ERROR_ALREADY_EXISTS {
-            return Ok(());
+        // Started by an update: give the old version a few seconds to exit.
+        let updated = std::env::args().any(|a| a == "--updated");
+        let mut tries = 0;
+        let _mutex = loop {
+            let m = CreateMutexW(None, true, w!("Local\\BatteriesBarSingleInstance"))?;
+            if GetLastError() != ERROR_ALREADY_EXISTS {
+                break m;
+            }
+            let _ = CloseHandle(m);
+            tries += 1;
+            if !updated || tries > 50 {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        };
+        if let Ok(exe) = std::env::current_exe() {
+            let _ = std::fs::remove_file(updater::old_path(&exe));
         }
-        let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX {
-            dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
-            dwICC: ICC_WIN95_CLASSES,
-        });
+        let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX { dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32, dwICC: ICC_WIN95_CLASSES });
         let instance = GetModuleHandleW(None)?;
         for (class, style) in [(MSG_CLASS, Default::default()), (strip::CLASS, CS_DBLCLKS)] {
             RegisterClassExW(&WNDCLASSEXW {
@@ -99,34 +118,23 @@ fn run() -> Result<()> {
             });
         }
         // A hidden top-level window (not message-only: it must receive the TaskbarCreated broadcast).
-        let msg_hwnd = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
-            MSG_CLASS,
-            w!("Battery bar"),
-            WS_OVERLAPPED,
-            0,
-            0,
-            0,
-            0,
-            None,
-            None,
-            instance,
-            None,
-        )?;
+        let msg_hwnd = CreateWindowExW(WINDOW_EX_STYLE::default(), MSG_CLASS, w!("Battery bar"), WS_OVERLAPPED, 0, 0, 0, 0, None, None, instance, None)?;
 
         let cfg = Config::load();
         tray::install_handlers(msg_hwnd, WM_TRAY);
         let monitors = taskbar::monitors();
         let current = taskbar::pick(cfg.monitor.as_deref()).map(|m| m.name).unwrap_or_default();
-        let menu = tray::build_menu(&cfg, &monitors, &current, autostart::is_enabled())?;
+        let menu = tray::build_menu(&cfg, &monitors, &current, autostart::is_enabled(), None)?;
         let tray = tray::create(menu.clone(), "Battery bar: reading devices…")?;
         let poller = Poller::start(msg_hwnd, WM_POLLED, cfg.poll_secs);
+        let updater = Updater::start(msg_hwnd, WM_UPDATER, cfg.check_updates);
         let mut app = App {
             msg_hwnd,
             cfg,
             readings: Vec::new(),
             strip: None,
             poller,
+            updater,
             tray,
             menu,
             taskbar_created: RegisterWindowMessageW(w!("TaskbarCreated")),
@@ -183,6 +191,9 @@ impl App {
                 }
             }
             WM_RELOAD => self.reload(),
+            WM_UPDATER => self.on_updater(),
+            WM_CHECK_UPDATES => self.updater.send(updater::Command::CheckNow),
+            WM_INSTALL_UPDATE => self.on_action(Action::InstallUpdate),
             WM_HIGHLIGHT => {
                 self.highlight = wp.0.checked_sub(1).and_then(|i| self.cfg.devices.get(i)).map(|d| d.id.clone());
                 self.refresh();
@@ -235,8 +246,30 @@ impl App {
                 let _ = autostart::set(!autostart::is_enabled());
                 self.rebuild_menu();
             }
+            Action::InstallUpdate => {
+                let _ = self.tray.set_tooltip(Some("Battery bar: downloading update…"));
+                self.updater.send(updater::Command::Install);
+            }
             // SAFETY: ends the message loop on this thread.
             Action::Quit => unsafe { PostQuitMessage(0) },
+        }
+    }
+
+    fn on_updater(&mut self) {
+        match self.updater.take_installed() {
+            // The new version is running and waiting for us to exit.
+            // SAFETY: ends the message loop on this thread.
+            Some(Ok(())) => unsafe { PostQuitMessage(0) },
+            Some(Err(e)) => {
+                self.update_tray_tooltip();
+                let text: Vec<u16> = format!("The update could not be installed:\n{e}").encode_utf16().chain(Some(0)).collect();
+                // SAFETY: modal message box owned by our hidden window.
+                unsafe { MessageBoxW(self.msg_hwnd, PCWSTR(text.as_ptr()), w!("Battery bar"), MB_OK | MB_ICONWARNING) };
+            }
+            None => {
+                tray::set_badge(&self.tray, self.updater.available().is_some());
+                self.rebuild_menu();
+            }
         }
     }
 
@@ -253,6 +286,9 @@ impl App {
         }
         if new.poll_secs != self.cfg.poll_secs {
             self.poller.send(Command::SetInterval(new.poll_secs));
+        }
+        if new.check_updates != self.cfg.check_updates {
+            self.updater.send(updater::Command::SetEnabled(new.check_updates));
         }
         self.cfg = new;
         self.rebuild_menu();
@@ -295,7 +331,8 @@ impl App {
     fn rebuild_menu(&mut self) {
         let monitors = taskbar::monitors();
         let current = taskbar::pick(self.cfg.monitor.as_deref()).map(|m| m.name).unwrap_or_default();
-        if let Ok(menu) = tray::build_menu(&self.cfg, &monitors, &current, autostart::is_enabled()) {
+        let update = self.updater.available().map(|r| r.version);
+        if let Ok(menu) = tray::build_menu(&self.cfg, &monitors, &current, autostart::is_enabled(), update.as_deref()) {
             self.tray.set_menu(Some(Box::new(menu.clone())));
             self.menu = menu;
         }
@@ -303,11 +340,7 @@ impl App {
 
     fn update_tray_tooltip(&self) {
         let items = items::build(&self.cfg, &self.readings);
-        let text = if items.is_empty() {
-            "Battery bar: no devices".to_string()
-        } else {
-            items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join("  ")
-        };
+        let text = if items.is_empty() { "Battery bar: no devices".to_string() } else { items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join("  ") };
         let _ = self.tray.set_tooltip(Some(text));
     }
 }

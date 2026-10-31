@@ -37,8 +37,7 @@ impl KindSource {
 /// or `Other` from anywhere. BLE appearance and vendor protocols are trusted as they are.
 pub fn refine_kind(name: &str, kind: Kind, source: KindSource) -> (Kind, KindSource) {
     let audio = matches!(kind, Kind::Headset | Kind::Headphones | Kind::Earbuds | Kind::Neckband);
-    let generic = kind == Kind::Other
-        || (audio && matches!(source, KindSource::ClassOfDevice | KindSource::WindowsCategory | KindSource::Provider));
+    let generic = kind == Kind::Other || (audio && matches!(source, KindSource::ClassOfDevice | KindSource::WindowsCategory | KindSource::Provider));
     if !generic {
         return (kind, source);
     }
@@ -72,10 +71,7 @@ mod tests {
     fn layers() {
         // H3: Bluetooth says "wearable headset", the model table knows they're earbuds.
         assert_eq!(refine_kind("SOUNDPEATS H3", Kind::Headset, KindSource::ClassOfDevice), (Kind::Earbuds, KindSource::ModelTable));
-        assert_eq!(
-            refine_kind("SteelSeries Arctis Nova 7P", Kind::Headset, KindSource::Provider),
-            (Kind::Headset, KindSource::ModelTable)
-        );
+        assert_eq!(refine_kind("SteelSeries Arctis Nova 7P", Kind::Headset, KindSource::Provider), (Kind::Headset, KindSource::ModelTable));
         // A BLE appearance is specific enough already.
         assert_eq!(refine_kind("Galaxy Buds", Kind::Earbuds, KindSource::BleAppearance), (Kind::Earbuds, KindSource::BleAppearance));
         assert_eq!(refine_kind("AirPods Max", Kind::Headset, KindSource::ClassOfDevice), (Kind::Headphones, KindSource::ModelTable));

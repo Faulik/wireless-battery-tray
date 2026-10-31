@@ -27,6 +27,8 @@ pub struct Config {
     pub offset: i32,
     /// Show devices that are off/asleep with no reading as a dim dash.
     pub show_offline: bool,
+    /// Look for a new release on GitHub at start and once a day.
+    pub check_updates: bool,
     /// Every device ever seen, in display order.
     pub devices: Vec<DeviceConfig>,
 }
@@ -146,6 +148,7 @@ impl Default for Config {
             position: Position::Right,
             offset: 0,
             show_offline: false,
+            check_updates: true,
             devices: Vec::new(),
         }
     }
@@ -163,10 +166,7 @@ impl Config {
 
     /// Missing or unreadable config falls back to defaults rather than failing startup.
     pub fn load() -> Self {
-        std::fs::read_to_string(Self::path())
-            .ok()
-            .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default()
+        std::fs::read_to_string(Self::path()).ok().and_then(|s| toml::from_str(&s).ok()).unwrap_or_default()
     }
 
     pub fn save(&self) -> Result<()> {
@@ -252,10 +252,7 @@ pub fn save_snapshot(readings: &[Reading]) -> Result<()> {
 }
 
 pub fn load_snapshot() -> Vec<Reading> {
-    std::fs::read(snapshot_path())
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+    std::fs::read(snapshot_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
 #[cfg(test)]

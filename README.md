@@ -24,7 +24,18 @@ Build needs the MSVC Rust toolchain (`rustup default stable-x86_64-pc-windows-ms
   display mode, icon, short tag, order; monitor, position, text size, compact two-row mode,
   low-battery level, poll interval. Hovering a device outlines it on the strip.
 - Batteries are polled in the background every 60 s (configurable).
+- Updates: 30 s after start and then daily the bar asks GitHub for the latest release. When a
+  newer one exists the tray icon gets a blue dot and the menu offers "Update to vX.Y.Z"; clicking
+  it downloads `batteries-bar.exe`, checks it against `SHA256SUMS.txt`, swaps it in and restarts.
+  Nothing is installed without that click. Settings → Updates: turn checks off, "Check now".
 - Config: `%APPDATA%\batteries_app\config.toml`.
+
+## Releases
+Download from [Releases](https://github.com/Faulik/batteries_app/releases): the zip has both
+binaries and this README; `batteries-bar.exe` is also attached on its own (that's what the
+updater fetches). To publish one, bump `version` in the workspace `Cargo.toml`, commit, then
+`git tag vX.Y.Z && git push origin vX.Y.Z`; `.github/workflows/release.yml` tests, builds and
+publishes it (and fails if the tag doesn't match the version).
 
 ## Supported devices
 | Source | Devices |

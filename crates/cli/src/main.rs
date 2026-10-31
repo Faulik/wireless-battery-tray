@@ -20,10 +20,7 @@ fn main() {
     let snap = battery_core::poll_all(&providers::all());
 
     if json {
-        let out = JsonOut {
-            batteries: &snap.batteries,
-            errors: snap.errors.iter().map(|(p, e)| JsonError { provider: p, error: e }).collect(),
-        };
+        let out = JsonOut { batteries: &snap.batteries, errors: snap.errors.iter().map(|(p, e)| JsonError { provider: p, error: e }).collect() };
         println!("{}", serde_json::to_string_pretty(&out).expect("serialisable"));
         return;
     }

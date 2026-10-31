@@ -16,8 +16,10 @@ eframe = { version = "0.31", default-features = false, features = ["default_font
 providers.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 toml = "0.8"
 tray-icon = "0.19"
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
 windows.workspace = true
 
 [build-dependencies]

@@ -8,19 +8,16 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    D2D1CreateFactory, ID2D1DCRenderTarget, D2D1_ROUNDED_RECT, ID2D1Factory, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
-    D2D1_RENDER_TARGET_USAGE_NONE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
+    D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout, DWRITE_FACTORY_TYPE_SHARED,
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-    DWRITE_TEXT_METRICS,
+    DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
+    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_METRICS,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
-    DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
 };
 
 use crate::items::{Item, Style};
@@ -99,17 +96,7 @@ impl D2dPainter {
     fn format_family(&self, family: PCWSTR, px: f32, bold: bool) -> Result<IDWriteTextFormat> {
         let weight = if bold { DWRITE_FONT_WEIGHT_SEMI_BOLD } else { DWRITE_FONT_WEIGHT_NORMAL };
         // SAFETY: valid static strings.
-        Ok(unsafe {
-            self.dwrite.CreateTextFormat(
-                family,
-                None,
-                weight,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                px,
-                w!("en-us"),
-            )?
-        })
+        Ok(unsafe { self.dwrite.CreateTextFormat(family, None, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, px, w!("en-us"))? })
     }
 
     fn layout(&self, text: &str, format: &IDWriteTextFormat) -> Result<(IDWriteTextLayout, f32, f32)> {
@@ -233,12 +220,7 @@ impl StripPainter for D2dPainter {
                     if items[i].highlight {
                         let inset = 4.0 * scale;
                         let outline = D2D1_ROUNDED_RECT {
-                            rect: D2D_RECT_F {
-                                left: x0 - inset,
-                                top: top + inset,
-                                right: x0 + l.width + inset,
-                                bottom: top + row_h - inset,
-                            },
+                            rect: D2D_RECT_F { left: x0 - inset, top: top + inset, right: x0 + l.width + inset, bottom: top + row_h - inset },
                             radiusX: 4.0 * scale,
                             radiusY: 4.0 * scale,
                         };
@@ -249,7 +231,8 @@ impl StripPainter for D2dPainter {
                 x0 += col_w + gap;
             }
             self.target.EndDraw(None, None)?;
-        }        Ok((width, height))
+        }
+        Ok((width, height))
     }
 
     fn dc(&self) -> HDC {
@@ -282,4 +265,3 @@ fn color(style: Style, dark: bool) -> D2D1_COLOR_F {
     };
     D2D1_COLOR_F { r, g, b, a }
 }
-

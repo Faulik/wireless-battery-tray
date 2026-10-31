@@ -3,8 +3,7 @@
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
-    MONITOR_DEFAULTTONEAREST,
+    EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, GetWindowRect, IsWindowVisible, MONITORINFOF_PRIMARY};
@@ -57,9 +56,7 @@ pub fn monitors() -> Vec<Monitor> {
 /// The configured monitor, or the primary one if it's missing/unplugged.
 pub fn pick(name: Option<&str>) -> Option<Monitor> {
     let all = monitors();
-    name.and_then(|n| all.iter().find(|m| m.name == n).cloned())
-        .or_else(|| all.iter().find(|m| m.primary).cloned())
-        .or_else(|| all.into_iter().next())
+    name.and_then(|n| all.iter().find(|m| m.name == n).cloned()).or_else(|| all.iter().find(|m| m.primary).cloned()).or_else(|| all.into_iter().next())
 }
 
 #[derive(Debug, Clone, Copy)]

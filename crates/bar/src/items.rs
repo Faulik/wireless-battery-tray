@@ -173,8 +173,22 @@ pub fn label(dev: &DeviceConfig) -> String {
 /// A short label from a product name: drop brand and generic words, keep the first model-ish word.
 pub fn auto_label(name: &str) -> String {
     const SKIP: &[&str] = &[
-        "wireless", "mouse", "keyboard", "headset", "headphones", "gaming", "bluetooth", "logitech", "steelseries",
-        "arctis", "keychron", "soundpeats", "sony", "razer", "corsair", "hyperx",
+        "wireless",
+        "mouse",
+        "keyboard",
+        "headset",
+        "headphones",
+        "gaming",
+        "bluetooth",
+        "logitech",
+        "steelseries",
+        "arctis",
+        "keychron",
+        "soundpeats",
+        "sony",
+        "razer",
+        "corsair",
+        "hyperx",
     ];
     if name.to_ascii_lowercase().starts_with("dualshock") {
         return "DS4".into();
@@ -182,10 +196,7 @@ pub fn auto_label(name: &str) -> String {
     if name.to_ascii_lowercase().starts_with("dualsense") {
         return "DS5".into();
     }
-    let word = name
-        .split_whitespace()
-        .find(|w| !SKIP.contains(&w.to_ascii_lowercase().as_str()))
-        .unwrap_or(name);
+    let word = name.split_whitespace().find(|w| !SKIP.contains(&w.to_ascii_lowercase().as_str())).unwrap_or(name);
     word.chars().take(8).collect()
 }
 

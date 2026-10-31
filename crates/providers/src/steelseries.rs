@@ -59,11 +59,7 @@ impl Provider for SteelSeriesProvider {
             dev.write(&[0x00, 0xB0])?;
             let mut data = [0u8; 8];
             let n = dev.read_timeout(&mut data, TIMEOUT.as_millis() as i32)?;
-            let (level, charging) = if n < 4 {
-                (Level::Unavailable("no reply from dongle".into()), None)
-            } else {
-                parse_status(&data, discrete)
-            };
+            let (level, charging) = if n < 4 { (Level::Unavailable("no reply from dongle".into()), None) } else { parse_status(&data, discrete) };
             out.push(Battery {
                 device_id: stable_id("ss", pid, info.serial_number()),
                 name: name.to_string(),

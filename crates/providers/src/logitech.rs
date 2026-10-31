@@ -92,7 +92,17 @@ impl Receiver {
 
         let (name, kind) = self.name_and_kind(index)?;
         let (level, charging) = self.battery(index)?;
-        Ok(Some(Battery { device_id, name, part: None, kind, kind_source: KindSource::Provider, level, charging, connected: Some(true), source: "logitech-hidpp" }))
+        Ok(Some(Battery {
+            device_id,
+            name,
+            part: None,
+            kind,
+            kind_source: KindSource::Provider,
+            level,
+            charging,
+            connected: Some(true),
+            source: "logitech-hidpp",
+        }))
     }
 
     fn battery(&self, index: u8) -> Result<(Level, Option<bool>)> {
@@ -100,11 +110,7 @@ impl Receiver {
             if let Reply::Ok(r) = self.request(index, f, 1, &[])? {
                 // get_status: [state of charge %, level flags, charging status, external power]
                 let (soc, flags, status) = (r[4], r[5], r[6]);
-                let level = if soc > 0 {
-                    Level::Percent(soc.min(100))
-                } else {
-                    Level::Coarse(coarse_from_flags(flags).into())
-                };
+                let level = if soc > 0 { Level::Percent(soc.min(100)) } else { Level::Coarse(coarse_from_flags(flags).into()) };
                 return Ok((level, Some(matches!(status, 1 | 2))));
             }
         }
@@ -259,8 +265,19 @@ fn coarse_from_flags(flags: u8) -> &'static str {
 /// Li-ion discharge curve used by Solaar for feature 0x1001 (mV, %).
 fn percent_from_millivolts(mv: u16) -> u8 {
     const CURVE: &[(u16, u8)] = &[
-        (4186, 100), (4067, 90), (3989, 80), (3922, 70), (3859, 60), (3811, 50),
-        (3778, 40), (3751, 30), (3717, 20), (3671, 10), (3646, 5), (3579, 2), (3500, 0),
+        (4186, 100),
+        (4067, 90),
+        (3989, 80),
+        (3922, 70),
+        (3859, 60),
+        (3811, 50),
+        (3778, 40),
+        (3751, 30),
+        (3717, 20),
+        (3671, 10),
+        (3646, 5),
+        (3579, 2),
+        (3500, 0),
     ];
     if mv >= CURVE[0].0 {
         return 100;

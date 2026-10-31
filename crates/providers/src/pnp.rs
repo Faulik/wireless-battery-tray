@@ -12,24 +12,14 @@ use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use crate::debug;
 use windows::core::{GUID, PCWSTR};
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_Get_Child, CM_Get_DevNode_PropertyW, CM_Get_Device_IDW, CM_Get_Sibling, CM_Locate_DevNodeW,
-    CM_LOCATE_DEVNODE_NORMAL, CR_SUCCESS,
+    CM_Get_Child, CM_Get_DevNode_PropertyW, CM_Get_Device_IDW, CM_Get_Sibling, CM_Locate_DevNodeW, CM_LOCATE_DEVNODE_NORMAL, CR_SUCCESS,
 };
 use windows::Win32::Devices::Properties::{DEVPKEY_Device_FriendlyName, DEVPROPKEY, DEVPROPTYPE};
 
-const DEVPKEY_BLUETOOTH_BATTERY: DEVPROPKEY = DEVPROPKEY {
-    fmtid: GUID::from_u128(0x104EA319_6EE2_4701_BD47_8DDBF425BBE5),
-    pid: 2,
-};
-const DEVPKEY_BLUETOOTH_CLASS_OF_DEVICE: DEVPROPKEY = DEVPROPKEY {
-    fmtid: GUID::from_u128(0x2BD67D8B_8BEB_48D5_87E0_6CDA3428040A),
-    pid: 10,
-};
+const DEVPKEY_BLUETOOTH_BATTERY: DEVPROPKEY = DEVPROPKEY { fmtid: GUID::from_u128(0x104EA319_6EE2_4701_BD47_8DDBF425BBE5), pid: 2 };
+const DEVPKEY_BLUETOOTH_CLASS_OF_DEVICE: DEVPROPKEY = DEVPROPKEY { fmtid: GUID::from_u128(0x2BD67D8B_8BEB_48D5_87E0_6CDA3428040A), pid: 10 };
 /// DEVPKEY_DeviceDisplay_Category: string list such as `Communication.Headset.Bluetooth`.
-const DEVPKEY_DEVICE_CATEGORY: DEVPROPKEY = DEVPROPKEY {
-    fmtid: GUID::from_u128(0x78C34FC8_104A_4ACA_9EA4_524D52996E57),
-    pid: 90,
-};
+const DEVPKEY_DEVICE_CATEGORY: DEVPROPKEY = DEVPROPKEY { fmtid: GUID::from_u128(0x78C34FC8_104A_4ACA_9EA4_524D52996E57), pid: 90 };
 
 pub struct PnpProvider;
 
@@ -68,9 +58,9 @@ impl Provider for PnpProvider {
                 continue;
             };
             let addr = bt_address(id);
-            let (name, kind, kind_source) = addr.and_then(|a| devices.get(&a).cloned()).unwrap_or_else(|| {
-                (prop_string(inst, &DEVPKEY_Device_FriendlyName).unwrap_or(id.clone()), Kind::Other, KindSource::Provider)
-            });
+            let (name, kind, kind_source) = addr
+                .and_then(|a| devices.get(&a).cloned())
+                .unwrap_or_else(|| (prop_string(inst, &DEVPKEY_Device_FriendlyName).unwrap_or(id.clone()), Kind::Other, KindSource::Provider));
             out.push(Battery {
                 device_id: addr.map(crate::bt_device_id).unwrap_or_else(|| format!("pnp:{id}")),
                 name,
@@ -128,11 +118,7 @@ fn kind_from_category(cat: &str) -> Kind {
 /// Extract the 12-hex-digit address from Bluetooth instance ids such as
 /// `BTHLE\DEV_0A1B2C3D4E5F\...` or `BTHENUM\{...}_LOCALMFG&005D\A&2B3C4D5E&0&112233445566_C00000000`.
 fn bt_address(id: &str) -> Option<u64> {
-    let hex12 = |s: &str| {
-        (s.len() >= 12 && s.as_bytes()[..12].iter().all(u8::is_ascii_hexdigit))
-            .then(|| u64::from_str_radix(&s[..12], 16).ok())
-            .flatten()
-    };
+    let hex12 = |s: &str| (s.len() >= 12 && s.as_bytes()[..12].iter().all(u8::is_ascii_hexdigit)).then(|| u64::from_str_radix(&s[..12], 16).ok()).flatten();
     if let Some(i) = id.find("DEV_") {
         return hex12(&id[i + 4..]);
     }
@@ -223,10 +209,7 @@ mod tests {
     #[test]
     fn parses_bluetooth_addresses() {
         assert_eq!(bt_address(r"BTHLE\DEV_0A1B2C3D4E5F\8&11223344&0&0A1B2C3D4E5F"), Some(0x0A1B2C3D4E5F));
-        assert_eq!(
-            bt_address(r"BTHENUM\{0000111E-0000-1000-8000-00805F9B34FB}_LOCALMFG&005D\A&2B3C4D5E&0&112233445566_C00000000"),
-            Some(0x112233445566)
-        );
+        assert_eq!(bt_address(r"BTHENUM\{0000111E-0000-1000-8000-00805F9B34FB}_LOCALMFG&005D\A&2B3C4D5E&0&112233445566_C00000000"), Some(0x112233445566));
         assert_eq!(bt_address(r"USB\VID_046D&PID_C52B\8&1234ABC&0&5"), None);
     }
 

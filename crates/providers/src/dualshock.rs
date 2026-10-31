@@ -38,10 +38,8 @@ impl Provider for DualShockProvider {
     fn poll(&self) -> Result<Vec<Battery>> {
         let api = HidApi::new()?;
         let mut out = Vec::new();
-        for (n, info) in api
-            .device_list()
-            .filter(|d| d.vendor_id() == VID && PIDS.contains(&d.product_id()) && d.usage_page() == 0x01 && d.usage() == 0x05)
-            .enumerate()
+        for (n, info) in
+            api.device_list().filter(|d| d.vendor_id() == VID && PIDS.contains(&d.product_id()) && d.usage_page() == 0x01 && d.usage() == 0x05).enumerate()
         {
             let bluetooth = info.path().to_string_lossy().to_ascii_lowercase().contains(BT_HID_SERVICE);
             let dev = api.open_path(info.path())?;
@@ -54,9 +52,7 @@ impl Provider for DualShockProvider {
                 status = read_status(&dev, bluetooth)?;
             }
             let (level, charging, connected) = match status {
-                Some(s) if info.product_id() == DONGLE_PID && s[1] & 0x04 != 0 => {
-                    (Level::Unavailable("controller off".into()), None, Some(false))
-                }
+                Some(s) if info.product_id() == DONGLE_PID && s[1] & 0x04 != 0 => (Level::Unavailable("controller off".into()), None, Some(false)),
                 Some(s) => {
                     let (pct, charging) = parse_status0(s[0]);
                     (pct.map_or(Level::Unavailable("charge error".into()), Level::Percent), charging, Some(true))

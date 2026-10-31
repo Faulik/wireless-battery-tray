@@ -12,7 +12,8 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use crate::config::{load_snapshot, Config, Display, Icon, Reading};
 use crate::items::{self, Style};
 use crate::taskbar::{self, Monitor, Position};
-use crate::{autostart, WM_HIGHLIGHT, WM_RELOAD};
+use crate::updater::{self, Status};
+use crate::{autostart, WM_CHECK_UPDATES, WM_HIGHLIGHT, WM_INSTALL_UPDATE, WM_RELOAD};
 
 pub const TITLE: &str = "Battery bar settings";
 
@@ -29,7 +30,7 @@ pub fn run(notify: Option<isize>) -> Result<()> {
             Ok(Box::new(SettingsApp::new(notify)))
         }),
     )
-        .map_err(|e| anyhow!("settings window: {e}"))
+    .map_err(|e| anyhow!("settings window: {e}"))
 }
 
 struct SettingsApp {
@@ -42,6 +43,9 @@ struct SettingsApp {
     refreshed: Instant,
     dark: bool,
     highlight: Option<String>,
+    update: Status,
+    /// Set while waiting for the bar to answer "Check now" or "Install".
+    update_busy: Option<&'static str>,
 }
 
 impl SettingsApp {
@@ -57,7 +61,15 @@ impl SettingsApp {
             refreshed: Instant::now(),
             dark: crate::system_dark(),
             highlight: None,
+            update: updater::load_status(),
+            update_busy: None,
         }
+    }
+
+    /// Tell the bar something; false when it isn't running (or we weren't started by it).
+    fn post(&self, msg: u32, wp: usize) -> bool {
+        // SAFETY: posting to the bar's message window; harmless if it's gone.
+        self.notify.is_some_and(|h| unsafe { PostMessageW(HWND(h as _), msg, WPARAM(wp), LPARAM(0)) }.is_ok())
     }
 
     fn apply(&mut self) {
@@ -66,10 +78,35 @@ impl SettingsApp {
         }
         if self.cfg.save().is_ok() {
             self.saved = self.cfg.clone();
-            if let Some(h) = self.notify {
-                // SAFETY: posting to the bar's message window; harmless if it's gone.
-                let _ = unsafe { PostMessageW(HWND(h as _), WM_RELOAD, WPARAM(0), LPARAM(0)) };
+            self.post(WM_RELOAD, 0);
+        }
+    }
+
+    fn updates(&mut self, ui: &mut egui::Ui) {
+        ui.label(format!("Version {}", updater::CURRENT));
+        ui.checkbox(&mut self.cfg.check_updates, "Check for updates automatically");
+        ui.horizontal(|ui| {
+            let idle = self.update_busy.is_none() && self.notify.is_some();
+            if ui.add_enabled(idle, egui::Button::new("Check now")).clicked() && self.post(WM_CHECK_UPDATES, 0) {
+                self.update_busy = Some("Checking…");
             }
+            if let Some(r) = self.update.newer.clone() {
+                if ui.add_enabled(idle, egui::Button::new(format!("Update to v{}", r.version))).clicked() && self.post(WM_INSTALL_UPDATE, 0) {
+                    self.update_busy = Some("Downloading and restarting the bar…");
+                }
+                ui.hyperlink_to("What's new", &r.page);
+            }
+        });
+        let note = match (&self.update_busy, &self.update) {
+            (Some(busy), _) => busy.to_string(),
+            (None, Status { checked: None, .. }) => "Not checked yet.".into(),
+            (None, Status { error: Some(e), .. }) => e.clone(),
+            (None, Status { newer: Some(r), .. }) => format!("Version {} is available.", r.version),
+            (None, Status { checked: Some(t), .. }) => format!("Up to date (checked {}).", ago(*t)),
+        };
+        ui.label(RichText::new(note).small().weak());
+        if self.notify.is_none() {
+            ui.label(RichText::new("Open settings from the bar to check for updates.").small().weak());
         }
     }
 
@@ -80,6 +117,11 @@ impl SettingsApp {
         }
         self.refreshed = Instant::now();
         self.readings = load_snapshot();
+        let update = updater::load_status();
+        if update != self.update {
+            self.update = update;
+            self.update_busy = None;
+        }
         let disk = Config::load();
         for d in disk.devices {
             if !self.cfg.devices.iter().any(|x| x.id == d.id) {
@@ -91,7 +133,8 @@ impl SettingsApp {
 
     fn preview(&self, ui: &mut egui::Ui) {
         let items = items::build(&self.cfg, &self.readings);
-        let (bg, fg) = if self.dark { (Color32::from_rgb(32, 32, 32), Color32::WHITE) } else { (Color32::from_rgb(243, 243, 243), Color32::from_rgb(26, 26, 26)) };
+        let (bg, fg) =
+            if self.dark { (Color32::from_rgb(32, 32, 32), Color32::WHITE) } else { (Color32::from_rgb(243, 243, 243), Color32::from_rgb(26, 26, 26)) };
         egui::Frame::new().fill(bg).inner_margin(egui::Margin::symmetric(10, 8)).corner_radius(4.0).show(ui, |ui| {
             ui.set_min_width(ui.available_width());
             let size = self.cfg.text_size * 96.0 / 72.0;
@@ -108,7 +151,13 @@ impl SettingsApp {
                 s.push_str(&i.text);
                 let color = match i.style {
                     Style::Normal => fg,
-                    Style::Low => if self.dark { Color32::from_rgb(255, 107, 107) } else { Color32::from_rgb(196, 43, 28) },
+                    Style::Low => {
+                        if self.dark {
+                            Color32::from_rgb(255, 107, 107)
+                        } else {
+                            Color32::from_rgb(196, 43, 28)
+                        }
+                    }
                     Style::Dim => fg.gamma_multiply(0.5),
                 };
                 RichText::new(s).color(color).size(if self.cfg.compact { size * 0.85 } else { size })
@@ -151,13 +200,11 @@ impl SettingsApp {
             ui.label(RichText::new("Now").strong());
             ui.label("");
             ui.end_row();
+            // Indexes devices, readings-derived tags and the swap buttons together.
+            #[allow(clippy::needless_range_loop)]
             for i in 0..n {
-                let connection = self
-                    .readings
-                    .iter()
-                    .find(|r| r.device_id == self.cfg.devices[i].id)
-                    .map(|r| items::connection(&r.source, &r.device_id))
-                    .unwrap_or("");
+                let connection =
+                    self.readings.iter().find(|r| r.device_id == self.cfg.devices[i].id).map(|r| items::connection(&r.source, &r.device_id)).unwrap_or("");
                 let d = &mut self.cfg.devices[i];
                 let mut row = ui.checkbox(&mut d.show, "");
                 let name = ui.vertical(|ui| {
@@ -173,21 +220,19 @@ impl SettingsApp {
                         ui.selectable_value(&mut d.display, opt, opt.name());
                     }
                 });
-                row = row.union(display.response.on_hover_text(
-                    "Auto: just the icon, plus the short tag when another shown device has the same icon",
-                ));
+                row = row.union(display.response.on_hover_text("Auto: just the icon, plus the short tag when another shown device has the same icon"));
                 let current = d.icon();
-                let icon = egui::ComboBox::from_id_salt(("icon", i))
-                    .width(40.0)
-                    .selected_text(RichText::new(current.glyph().to_string()).size(16.0))
-                    .show_ui(ui, |ui| {
+                let icon = egui::ComboBox::from_id_salt(("icon", i)).width(40.0).selected_text(RichText::new(current.glyph().to_string()).size(16.0)).show_ui(
+                    ui,
+                    |ui| {
                         for opt in Icon::ALL {
                             let text = RichText::new(format!("{}  {}", opt.glyph(), opt.name()));
                             if ui.selectable_label(current == opt, text).clicked() {
                                 d.icon = (opt != Icon::from_kind(d.kind)).then_some(opt);
                             }
                         }
-                    });
+                    },
+                );
                 row = row.union(icon.response);
                 let mut label = d.label.clone().unwrap_or_default();
                 let hint = items::auto_label(&d.name);
@@ -260,10 +305,7 @@ impl SettingsApp {
         }
         // The bar addresses devices by position in its config, so only send once saved.
         let index = id.as_ref().and_then(|id| self.saved.devices.iter().position(|d| &d.id == id)).map_or(0, |i| i + 1);
-        if let Some(h) = self.notify {
-            // SAFETY: posting to the bar's message window; harmless if it's gone.
-            let _ = unsafe { PostMessageW(HWND(h as _), WM_HIGHLIGHT, WPARAM(index), LPARAM(0)) };
-        }
+        self.post(WM_HIGHLIGHT, index);
         self.highlight = id;
     }
 }
@@ -280,6 +322,16 @@ fn add_icon_font(ctx: &egui::Context) {
         fonts.families.entry(family).or_default().push("segoe-icons".into());
     }
     ctx.set_fonts(fonts);
+}
+
+fn ago(unix_secs: u64) -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    match now.saturating_sub(unix_secs) / 60 {
+        0 => "just now".into(),
+        m if m < 60 => format!("{m} min ago"),
+        m if m < 48 * 60 => format!("{} h ago", m / 60),
+        m => format!("{} days ago", m / (24 * 60)),
+    }
 }
 
 fn status(readings: &[Reading], id: &str) -> String {
@@ -346,6 +398,10 @@ impl eframe::App for SettingsApp {
                 if ui.checkbox(&mut auto, "Start with Windows").changed() && autostart::set(auto).is_ok() {
                     self.autostart = auto;
                 }
+                ui.add_space(12.0);
+
+                ui.heading("Updates");
+                self.updates(ui);
                 ui.add_space(8.0);
                 ui.label(RichText::new(format!("Config: {}", Config::path().display())).small().weak());
             });
