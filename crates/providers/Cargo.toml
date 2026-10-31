@@ -1,0 +1,13 @@
+[package]
+name = "providers"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+battery-core.workspace = true
+hidapi.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

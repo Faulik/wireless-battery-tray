@@ -1,0 +1,15 @@
+[package]
+name = "cli"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "batteries"
+path = "src/main.rs"
+
+[dependencies]
+battery-core.workspace = true
+providers.workspace = true
+serde.workspace = true
+serde_json.workspace = true

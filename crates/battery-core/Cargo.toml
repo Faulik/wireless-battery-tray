@@ -1,0 +1,9 @@
+[package]
+name = "battery-core"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
