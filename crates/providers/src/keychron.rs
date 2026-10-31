@@ -66,7 +66,7 @@ impl Provider for KeychronProvider {
                 };
                 out.push(Battery {
                     device_id: format!("keychron:{:04x}:{pid:04x}", info.product_id()),
-                    name: format!("Keychron {VID:04X}:{pid:04X}"),
+                    name: model_name(pid).map_or_else(|| format!("Keychron {VID:04X}:{pid:04X}"), String::from),
                     part: None,
                     kind: if slot == 2 { Kind::Mouse } else { Kind::Keyboard },
                     level,
@@ -77,6 +77,14 @@ impl Provider for KeychronProvider {
             }
         }
         Ok(out)
+    }
+}
+
+/// Models confirmed on real hardware; others are shown by VID:PID.
+fn model_name(pid: u16) -> Option<&'static str> {
+    match pid {
+        0x0E30 => Some("Keychron K3 HE"),
+        _ => None,
     }
 }
 
