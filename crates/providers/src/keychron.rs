@@ -7,6 +7,12 @@
 //! - `A7 31` (KC_USER_CMD_NAPE_GET_BAT_REPORT) is forwarded to the paired keyboard, which
 //!   answers `A7 31 level status`. Older Keychron firmware doesn't implement it and stays silent.
 //!
+//! Keychron's QMK firmware (github.com/Keychron/qmk_firmware, keyboards/keychron/common) has
+//! no raw-HID battery query: the keyboard pushes its level to the wireless module, which sends
+//! it over BLE's Battery Service in Bluetooth mode (picked up by the `gatt` provider). A K3 HE
+//! on this Link (firmware d.3.1) answered none of A0-A2, A7 31 or VIA 01 over 2.4 GHz, and the
+//! Link's vendor feature reports 0x51-0x53 stall, so its battery is not readable this way yet.
+//!
 //! Keychron 8K mouse receivers (3434:D028) use a different report (`B3 06`, level at byte 20,
 //! >100 = charging) per github.com/MrAdrianPl/keychron_battery_widget; not handled here yet.
 
