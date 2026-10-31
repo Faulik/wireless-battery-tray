@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use battery_core::{Battery, Kind, Level, Provider};
+use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use hidapi::HidApi;
 
 use crate::stable_id;
@@ -69,6 +69,7 @@ impl Provider for SteelSeriesProvider {
                 name: name.to_string(),
                 part: None,
                 kind: Kind::Headset,
+                kind_source: KindSource::Provider,
                 connected: Some(!matches!(level, Level::Unavailable(_))),
                 level,
                 charging,

@@ -7,7 +7,9 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
-use battery_core::{Battery, Kind, Level, Provider};
+use battery_core::{Battery, Kind, KindSource, Level, Provider};
+
+use crate::debug;
 use windows::core::{GUID, PCWSTR};
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_Child, CM_Get_DevNode_PropertyW, CM_Get_Device_IDW, CM_Get_Sibling, CM_Locate_DevNodeW,
@@ -23,6 +25,11 @@ const DEVPKEY_BLUETOOTH_CLASS_OF_DEVICE: DEVPROPKEY = DEVPROPKEY {
     fmtid: GUID::from_u128(0x2BD67D8B_8BEB_48D5_87E0_6CDA3428040A),
     pid: 10,
 };
+/// DEVPKEY_DeviceDisplay_Category: string list such as `Communication.Headset.Bluetooth`.
+const DEVPKEY_DEVICE_CATEGORY: DEVPROPKEY = DEVPROPKEY {
+    fmtid: GUID::from_u128(0x78C34FC8_104A_4ACA_9EA4_524D52996E57),
+    pid: 90,
+};
 
 pub struct PnpProvider;
 
@@ -37,13 +44,20 @@ impl Provider for PnpProvider {
         let nodes = all_devnodes()?;
 
         // Bluetooth address -> (friendly name, class of device) from the device's own node.
-        let mut devices: HashMap<u64, (String, Option<u32>)> = HashMap::new();
+        let mut devices: HashMap<u64, (String, Kind, KindSource)> = HashMap::new();
         for &(inst, ref id) in &nodes {
             if id.starts_with("BTHENUM\\DEV_") || id.starts_with("BTHLE\\DEV_") {
                 if let Some(addr) = bt_address(id) {
                     let name = prop_string(inst, &DEVPKEY_Device_FriendlyName).unwrap_or_else(|| id.clone());
                     let cod = prop_u32(inst, &DEVPKEY_BLUETOOTH_CLASS_OF_DEVICE);
-                    devices.insert(addr, (name, cod));
+                    let category = prop_string(inst, &DEVPKEY_DEVICE_CATEGORY);
+                    debug!("pnp: {name} class of device {cod:x?}, category {category:?}");
+                    let (kind, source) = match (cod.map(kind_from_cod), category.as_deref().map(kind_from_category)) {
+                        (Some(k), _) if k != Kind::Other => (k, KindSource::ClassOfDevice),
+                        (_, Some(k)) if k != Kind::Other => (k, KindSource::WindowsCategory),
+                        _ => (Kind::Other, KindSource::Provider),
+                    };
+                    devices.insert(addr, (name, kind, source));
                 }
             }
         }
@@ -54,14 +68,15 @@ impl Provider for PnpProvider {
                 continue;
             };
             let addr = bt_address(id);
-            let (name, cod) = addr
-                .and_then(|a| devices.get(&a).cloned())
-                .unwrap_or_else(|| (prop_string(inst, &DEVPKEY_Device_FriendlyName).unwrap_or(id.clone()), None));
+            let (name, kind, kind_source) = addr.and_then(|a| devices.get(&a).cloned()).unwrap_or_else(|| {
+                (prop_string(inst, &DEVPKEY_Device_FriendlyName).unwrap_or(id.clone()), Kind::Other, KindSource::Provider)
+            });
             out.push(Battery {
                 device_id: addr.map(crate::bt_device_id).unwrap_or_else(|| format!("pnp:{id}")),
                 name,
                 part: None,
-                kind: cod.map(kind_from_cod).unwrap_or(Kind::Other),
+                kind,
+                kind_source,
                 level: Level::Percent(pct.min(100)),
                 charging: None,
                 connected: None,
@@ -75,13 +90,38 @@ impl Provider for PnpProvider {
 /// Bluetooth class of device: major class in bits 8..13, minor in bits 2..8.
 fn kind_from_cod(cod: u32) -> Kind {
     match (cod >> 8) & 0x1F {
-        0x04 => Kind::Headset,
+        // Audio/video minor class (bits 2..8): 1 wearable headset, 2 hands-free, 6 headphones.
+        0x04 => match (cod >> 2) & 0x3F {
+            0x01 | 0x02 => Kind::Headset,
+            0x06 => Kind::Headphones,
+            _ => Kind::Other,
+        },
         0x05 => match (cod >> 6) & 0x03 {
             1 => Kind::Keyboard,
             2 => Kind::Mouse,
             _ => Kind::Other,
         },
         _ => Kind::Other,
+    }
+}
+
+/// Windows category strings, e.g. `Communication.Headset.Bluetooth`, `Audio.Headphone`, `Input.Keyboard`.
+fn kind_from_category(cat: &str) -> Kind {
+    let c = cat.to_ascii_lowercase();
+    if c.contains("earbud") {
+        Kind::Earbuds
+    } else if c.contains("headphone") {
+        Kind::Headphones
+    } else if c.contains("headset") {
+        Kind::Headset
+    } else if c.contains("keyboard") {
+        Kind::Keyboard
+    } else if c.contains("mouse") {
+        Kind::Mouse
+    } else if c.contains("gaming") || c.contains("gamepad") {
+        Kind::Gamepad
+    } else {
+        Kind::Other
     }
 }
 

@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use battery_core::{Battery, Kind, Level};
+use battery_core::{Battery, Kind, KindSource, Level};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -71,18 +71,22 @@ pub enum Icon {
     Mouse,
     Headset,
     Headphones,
+    Earbuds,
     Gamepad,
     Other,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 6] = [Icon::Keyboard, Icon::Mouse, Icon::Headset, Icon::Headphones, Icon::Gamepad, Icon::Other];
+    pub const ALL: [Icon; 7] = [Icon::Keyboard, Icon::Mouse, Icon::Headset, Icon::Headphones, Icon::Earbuds, Icon::Gamepad, Icon::Other];
 
     pub fn from_kind(kind: Kind) -> Self {
         match kind {
             Kind::Keyboard => Icon::Keyboard,
             Kind::Mouse => Icon::Mouse,
             Kind::Headset => Icon::Headset,
+            // No neckband glyph in Segoe Fluent Icons; headphones is the closest.
+            Kind::Headphones | Kind::Neckband => Icon::Headphones,
+            Kind::Earbuds => Icon::Earbuds,
             Kind::Gamepad => Icon::Gamepad,
             Kind::Other => Icon::Other,
         }
@@ -95,6 +99,8 @@ impl Icon {
             Icon::Mouse => '\u{E962}',
             Icon::Headset => '\u{E95B}',
             Icon::Headphones => '\u{E7F6}',
+            // "Earbud"; present in both Segoe Fluent Icons and current Segoe MDL2 Assets.
+            Icon::Earbuds => '\u{F4C0}',
             Icon::Gamepad => '\u{E7FC}',
             Icon::Other => '\u{E83F}',
         }
@@ -106,6 +112,7 @@ impl Icon {
             Icon::Mouse => "Mouse",
             Icon::Headset => "Headset",
             Icon::Headphones => "Headphones",
+            Icon::Earbuds => "Earbuds",
             Icon::Gamepad => "Gamepad",
             Icon::Other => "Other",
         }
@@ -198,10 +205,16 @@ pub struct Reading {
     pub name: String,
     pub part: Option<String>,
     pub kind: Kind,
+    #[serde(default = "provider_source")]
+    pub kind_source: KindSource,
     pub level: Level,
     pub charging: Option<bool>,
     pub connected: Option<bool>,
     pub source: String,
+}
+
+fn provider_source() -> KindSource {
+    KindSource::Provider
 }
 
 impl From<Battery> for Reading {
@@ -211,6 +224,7 @@ impl From<Battery> for Reading {
             name: b.name,
             part: b.part,
             kind: b.kind,
+            kind_source: b.kind_source,
             level: b.level,
             charging: b.charging,
             connected: b.connected,

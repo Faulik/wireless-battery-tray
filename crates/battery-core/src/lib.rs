@@ -6,10 +6,19 @@ use serde::{Deserialize, Serialize};
 pub enum Kind {
     Keyboard,
     Mouse,
+    /// Over-ear with a microphone.
     Headset,
+    /// Over-ear, no microphone.
+    Headphones,
+    /// In-ear.
+    Earbuds,
+    Neckband,
     Gamepad,
     Other,
 }
+
+mod classify;
+pub use classify::{refine_kind, KindSource};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
@@ -31,6 +40,8 @@ pub struct Battery {
     /// Part of a multi-battery device ("Central", "Peripheral 0"); `None` for single-battery devices.
     pub part: Option<String>,
     pub kind: Kind,
+    /// Which detection layer decided `kind`.
+    pub kind_source: KindSource,
     pub level: Level,
     pub charging: Option<bool>,
     /// `Some(false)` when the device is known to be off/asleep/disconnected; a percentage is then the last known value.
@@ -62,7 +73,10 @@ pub fn poll_all(providers: &[Box<dyn Provider>]) -> Snapshot {
             eprintln!("{}: {:?}", p.name(), started.elapsed());
         }
         match result {
-            Ok(list) => tagged.extend(list.into_iter().map(|b| (p.priority(), b))),
+            Ok(list) => tagged.extend(list.into_iter().map(|mut b| {
+                (b.kind, b.kind_source) = refine_kind(&b.name, b.kind, b.kind_source);
+                (p.priority(), b)
+            })),
             Err(e) => errors.push((p.name(), format!("{e:#}"))),
         }
     }
@@ -101,6 +115,7 @@ mod tests {
             name: id.into(),
             part: part.map(Into::into),
             kind: Kind::Other,
+            kind_source: KindSource::Provider,
             level: Level::Percent(pct),
             charging: None,
             connected: None,

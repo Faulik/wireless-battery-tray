@@ -19,7 +19,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use battery_core::{Battery, Kind, Level, Provider};
+use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use hidapi::{HidApi, HidDevice};
 
 use crate::debug;
@@ -69,6 +69,7 @@ impl Provider for KeychronProvider {
                     name: model_name(pid).map_or_else(|| format!("Keychron {VID:04X}:{pid:04X}"), String::from),
                     part: None,
                     kind: if slot == 2 { Kind::Mouse } else { Kind::Keyboard },
+                    kind_source: KindSource::Provider,
                     level,
                     charging: None,
                     connected,

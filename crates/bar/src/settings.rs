@@ -227,9 +227,18 @@ impl SettingsApp {
         self.set_highlight(hovered.map(|i| self.cfg.devices[i].id.clone()));
 
         egui::CollapsingHeader::new("Details").show(ui, |ui| {
-            egui::Grid::new("ids").num_columns(2).spacing([16.0, 2.0]).show(ui, |ui| {
+            egui::Grid::new("ids").num_columns(3).spacing([16.0, 2.0]).show(ui, |ui| {
+                ui.label(RichText::new("Device").strong());
+                ui.label(RichText::new("Detected as").strong());
+                ui.label(RichText::new("Id").strong());
+                ui.end_row();
                 for d in &self.cfg.devices {
+                    let reading = self.readings.iter().find(|r| r.device_id == d.id);
                     ui.label(&d.name);
+                    ui.label(match reading {
+                        Some(r) => format!("{:?} (from {})", r.kind, r.kind_source.describe()),
+                        None => format!("{:?}", d.kind),
+                    });
                     ui.label(RichText::new(&d.id).monospace().weak());
                     ui.end_row();
                 }

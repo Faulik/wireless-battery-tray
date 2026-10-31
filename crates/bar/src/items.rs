@@ -202,6 +202,7 @@ mod tests {
             name: id.into(),
             part: None,
             kind: Kind::Mouse,
+            kind_source: battery_core::KindSource::Provider,
             level,
             charging: None,
             connected,

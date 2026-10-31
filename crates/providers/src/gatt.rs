@@ -10,7 +10,7 @@
 //! is marked disconnected.
 
 use anyhow::Result;
-use battery_core::{Battery, Kind, Level, Provider};
+use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use windows::Devices::Bluetooth::GenericAttributeProfile::{
     GattCharacteristicUuids, GattCommunicationStatus, GattServiceUuids, GattSession,
 };
@@ -93,7 +93,10 @@ fn read_device(dev: &BluetoothLEDevice) -> Result<Vec<Battery>> {
     }
 
     let device_id = crate::bt_device_id(dev.BluetoothAddress()?);
-    let kind = dev.Appearance().map(|a| appearance_kind(a.RawValue().unwrap_or(0))).unwrap_or(Kind::Other);
+    let appearance = dev.Appearance().and_then(|a| a.RawValue()).unwrap_or(0);
+    let kind = appearance_kind(appearance);
+    debug!("gatt: {name} appearance {appearance:#06x} -> {kind:?}");
+    let kind_source = if kind == Kind::Other { KindSource::Provider } else { KindSource::BleAppearance };
     let multi = levels.len() > 1;
     Ok(levels
         .into_iter()
@@ -108,6 +111,7 @@ fn read_device(dev: &BluetoothLEDevice) -> Result<Vec<Battery>> {
                 (true, false) => None,
             },
             kind,
+            kind_source,
             level: Level::Percent(pct),
             charging: None,
             connected: Some(connected),
@@ -116,11 +120,16 @@ fn read_device(dev: &BluetoothLEDevice) -> Result<Vec<Battery>> {
         .collect())
 }
 
-/// GAP appearance: category in bits 6..16. 0x0F is HID (sub 1 keyboard, 2 mouse); 0x25 is ear/headset.
+/// GAP appearance: category in bits 6..16, subcategory in bits 0..6 (Bluetooth Assigned Numbers).
 fn appearance_kind(raw: u16) -> Kind {
     match (raw >> 6, raw & 0x3F) {
         (0x0F, 1) => Kind::Keyboard,
         (0x0F, 2) => Kind::Mouse,
+        (0x0F, 3 | 4) => Kind::Gamepad,
+        // 0x0940 Wearable Audio Device: 1 earbud, 2 headset, 3 headphones, 4 neckband.
+        (0x25, 1) => Kind::Earbuds,
+        (0x25, 3) => Kind::Headphones,
+        (0x25, 4) => Kind::Neckband,
         (0x25, _) => Kind::Headset,
         _ => Kind::Other,
     }

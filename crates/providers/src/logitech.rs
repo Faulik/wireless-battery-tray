@@ -8,7 +8,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use battery_core::{Battery, Kind, Level, Provider};
+use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use hidapi::{HidApi, HidDevice};
 
 const VID: u16 = 0x046D;
@@ -81,6 +81,7 @@ impl Receiver {
                     name,
                     part: None,
                     kind,
+                    kind_source: KindSource::Provider,
                     level: Level::Unavailable("asleep or off".into()),
                     charging: None,
                     connected: Some(false),
@@ -91,7 +92,7 @@ impl Receiver {
 
         let (name, kind) = self.name_and_kind(index)?;
         let (level, charging) = self.battery(index)?;
-        Ok(Some(Battery { device_id, name, part: None, kind, level, charging, connected: Some(true), source: "logitech-hidpp" }))
+        Ok(Some(Battery { device_id, name, part: None, kind, kind_source: KindSource::Provider, level, charging, connected: Some(true), source: "logitech-hidpp" }))
     }
 
     fn battery(&self, index: u8) -> Result<(Level, Option<bool>)> {

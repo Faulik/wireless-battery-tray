@@ -12,7 +12,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use battery_core::{Battery, Kind, Level, Provider};
+use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use hidapi::{HidApi, HidDevice};
 
 use crate::debug;
@@ -72,6 +72,7 @@ impl Provider for DualShockProvider {
                 name: "DualShock 4".into(),
                 part: None,
                 kind: Kind::Gamepad,
+                kind_source: KindSource::Provider,
                 level,
                 charging,
                 connected,
