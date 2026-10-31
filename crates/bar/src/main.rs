@@ -40,6 +40,8 @@ const WM_POLLED: u32 = WM_APP + 1;
 const WM_TRAY: u32 = WM_APP + 2;
 /// Sent by the settings process after it saved config.toml.
 pub const WM_RELOAD: u32 = WM_APP + 3;
+/// Sent by the settings process: WPARAM = 1-based index of the device to outline, 0 = none.
+pub const WM_HIGHLIGHT: u32 = WM_APP + 4;
 const TIMER_PLACE: usize = 1;
 
 struct App {
@@ -52,6 +54,7 @@ struct App {
     menu: tray_icon::menu::Menu,
     taskbar_created: u32,
     dark: bool,
+    highlight: Option<String>,
 }
 
 thread_local! {
@@ -128,6 +131,7 @@ fn run() -> Result<()> {
             menu,
             taskbar_created: RegisterWindowMessageW(w!("TaskbarCreated")),
             dark: system_dark(),
+            highlight: None,
         };
         app.ensure_strip();
         APP.with(|a| *a.borrow_mut() = Some(app));
@@ -179,6 +183,10 @@ impl App {
                 }
             }
             WM_RELOAD => self.reload(),
+            WM_HIGHLIGHT => {
+                self.highlight = wp.0.checked_sub(1).and_then(|i| self.cfg.devices.get(i)).map(|d| d.id.clone());
+                self.refresh();
+            }
             WM_TIMER if hwnd == self.msg_hwnd => self.refresh(),
             WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
                 self.dark = system_dark();
@@ -268,7 +276,10 @@ impl App {
 
     fn refresh(&mut self) {
         self.ensure_strip();
-        let items = items::build(&self.cfg, &self.readings);
+        let mut items = items::build(&self.cfg, &self.readings);
+        for i in &mut items {
+            i.highlight = self.highlight.as_ref() == Some(&i.device_id);
+        }
         if let Some(s) = self.strip.as_mut() {
             if let Err(e) = s.update(&items, self.dark, self.cfg.text_size, self.cfg.compact) {
                 eprintln!("strip update: {e:#}");

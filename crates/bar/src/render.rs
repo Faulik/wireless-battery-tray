@@ -6,9 +6,9 @@
 use anyhow::Result;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::RECT;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F};
+use windows::Win32::Graphics::Direct2D::Common::{D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1Factory, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1CreateFactory, ID2D1DCRenderTarget, D2D1_ROUNDED_RECT, ID2D1Factory, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
     D2D1_RENDER_TARGET_USAGE_NONE, D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE,
 };
@@ -168,12 +168,12 @@ impl StripPainter for D2dPainter {
         let pad = 6.0 * scale;
 
         let icon_format = self.format_family(self.icon_family(), px * 1.3, false)?;
-        let badge_format = self.format(px * 0.62, true)?;
+        let tag_format = self.format(px * 0.72, true)?;
         let icon_gap = 4.0 * scale;
 
         struct Laid {
             icon: Option<(IDWriteTextLayout, f32, f32)>,
-            badge: Option<(IDWriteTextLayout, f32, f32)>,
+            tag: Option<(IDWriteTextLayout, f32, f32)>,
             text: (IDWriteTextLayout, f32, f32),
             width: f32,
         }
@@ -181,10 +181,10 @@ impl StripPainter for D2dPainter {
             .iter()
             .map(|i| {
                 let icon = i.icon.map(|g| self.layout(&g.to_string(), &icon_format)).transpose()?;
-                let badge = i.badge.map(|b| self.layout(&b.to_string(), &badge_format)).transpose()?;
+                let tag = i.tag.as_ref().map(|t| self.layout(t, &tag_format)).transpose()?;
                 let text = self.layout(&i.text, &format)?;
-                let lead = icon.as_ref().map_or(0.0, |l| l.1 + icon_gap) + badge.as_ref().map_or(0.0, |l| l.1 + scale);
-                Ok(Laid { width: lead + text.1, icon, badge, text })
+                let lead = icon.as_ref().map_or(0.0, |l| l.1 + icon_gap) + tag.as_ref().map_or(0.0, |l| l.1 + icon_gap);
+                Ok(Laid { width: lead + text.1, icon, tag, text })
             })
             .collect::<Result<_>>()?;
         // Column layout: in compact mode items fill top then bottom row, column by column.
@@ -222,15 +222,29 @@ impl StripPainter for D2dPainter {
                         let iy = top + (row_h - h) / 2.0;
                         draw(icon, x, iy);
                         x += w;
-                        if let Some((badge, bw, bh)) = &l.badge {
-                            // Subscript right after the icon (wide glyphs like the keyboard leave no room inside).
-                            draw(badge, x + scale, iy + h - bh * 0.9);
-                            x += bw + scale;
-                        }
                         x += icon_gap;
+                    }
+                    if let Some((tag, tw, th)) = &l.tag {
+                        draw(tag, x, top + (row_h - th) / 2.0);
+                        x += tw + icon_gap;
                     }
                     let (text, _, h) = &l.text;
                     draw(text, x, top + (row_h - h) / 2.0);
+                    if items[i].highlight {
+                        let inset = 4.0 * scale;
+                        let outline = D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: x0 - inset,
+                                top: top + inset,
+                                right: x0 + l.width + inset,
+                                bottom: top + row_h - inset,
+                            },
+                            radiusX: 4.0 * scale,
+                            radiusY: 4.0 * scale,
+                        };
+                        let accent = self.target.CreateSolidColorBrush(&color(Style::Normal, look.dark), None)?;
+                        self.target.DrawRoundedRectangle(&outline, &accent, 1.5 * scale, None);
+                    }
                 }
                 x0 += col_w + gap;
             }

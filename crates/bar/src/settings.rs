@@ -12,7 +12,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use crate::config::{load_snapshot, Config, Display, Icon, Reading};
 use crate::items::{self, Style};
 use crate::taskbar::{self, Monitor};
-use crate::{autostart, WM_RELOAD};
+use crate::{autostart, WM_HIGHLIGHT, WM_RELOAD};
 
 pub const TITLE: &str = "Battery bar settings";
 
@@ -41,6 +41,7 @@ struct SettingsApp {
     notify: Option<isize>,
     refreshed: Instant,
     dark: bool,
+    highlight: Option<String>,
 }
 
 impl SettingsApp {
@@ -55,6 +56,7 @@ impl SettingsApp {
             notify,
             refreshed: Instant::now(),
             dark: crate::system_dark(),
+            highlight: None,
         }
     }
 
@@ -97,9 +99,10 @@ impl SettingsApp {
                 let mut s = String::new();
                 if let Some(g) = i.icon {
                     s.push(g);
-                    if let Some(b) = i.badge {
-                        s.push_str(&b.to_string());
-                    }
+                    s.push(' ');
+                }
+                if let Some(t) = &i.tag {
+                    s.push_str(t);
                     s.push(' ');
                 }
                 s.push_str(&i.text);
@@ -136,33 +139,45 @@ impl SettingsApp {
 
     fn devices(&mut self, ui: &mut egui::Ui) {
         let mut swap: Option<(usize, usize)> = None;
+        let mut hovered: Option<usize> = None;
         let n = self.cfg.devices.len();
-        let badges = items::badges(&self.cfg);
+        let tags = items::tags(&self.cfg);
         egui::Grid::new("devices").num_columns(7).striped(true).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label(RichText::new("Show").strong());
             ui.label(RichText::new("Device").strong());
             ui.label(RichText::new("Show as").strong());
             ui.label(RichText::new("Icon").strong());
-            ui.label(RichText::new("Label").strong());
+            ui.label(RichText::new("Short tag").strong());
             ui.label(RichText::new("Now").strong());
             ui.label("");
             ui.end_row();
             for i in 0..n {
+                let connection = self
+                    .readings
+                    .iter()
+                    .find(|r| r.device_id == self.cfg.devices[i].id)
+                    .map(|r| items::connection(&r.source, &r.device_id))
+                    .unwrap_or("");
                 let d = &mut self.cfg.devices[i];
-                ui.checkbox(&mut d.show, "");
-                ui.vertical(|ui| {
+                let mut row = ui.checkbox(&mut d.show, "");
+                let name = ui.vertical(|ui| {
                     ui.set_min_width(210.0);
-                    let badge = badges[i].map(|b| format!("  #{b}")).unwrap_or_default();
-                    ui.add(egui::Label::new(format!("{}{badge}", d.name)).extend());
-                    ui.add(egui::Label::new(RichText::new(&d.id).small().weak()).extend());
+                    ui.add(egui::Label::new(&d.name).extend());
+                    if !connection.is_empty() {
+                        ui.add(egui::Label::new(RichText::new(connection).small().weak()).extend());
+                    }
                 });
-                egui::ComboBox::from_id_salt(("display", i)).width(96.0).selected_text(d.display.name()).show_ui(ui, |ui| {
+                row = row.union(name.response);
+                let display = egui::ComboBox::from_id_salt(("display", i)).width(96.0).selected_text(d.display.name()).show_ui(ui, |ui| {
                     for opt in Display::ALL {
                         ui.selectable_value(&mut d.display, opt, opt.name());
                     }
                 });
+                row = row.union(display.response.on_hover_text(
+                    "Auto: just the icon, plus the short tag when another shown device has the same icon",
+                ));
                 let current = d.icon();
-                egui::ComboBox::from_id_salt(("icon", i))
+                let icon = egui::ComboBox::from_id_salt(("icon", i))
                     .width(40.0)
                     .selected_text(RichText::new(current.glyph().to_string()).size(16.0))
                     .show_ui(ui, |ui| {
@@ -173,12 +188,22 @@ impl SettingsApp {
                             }
                         }
                     });
+                row = row.union(icon.response);
                 let mut label = d.label.clone().unwrap_or_default();
                 let hint = items::auto_label(&d.name);
-                if ui.add(egui::TextEdit::singleline(&mut label).hint_text(hint).desired_width(70.0)).changed() {
+                let edit = ui.add(egui::TextEdit::singleline(&mut label).hint_text(hint).desired_width(70.0));
+                if edit.changed() {
                     d.label = (!label.trim().is_empty()).then(|| label.trim().to_string());
                 }
-                ui.label(status(&self.readings, &d.id));
+                row = row.union(edit);
+                let now = ui.horizontal(|ui| {
+                    ui.label(status(&self.readings, &d.id));
+                    if tags[i].as_ref().is_some_and(|t| t.clashed) {
+                        ui.label(RichText::new("⚠ same tag as another device").color(Color32::from_rgb(230, 160, 40)))
+                            .on_hover_text("Give one of them its own short tag so you can tell them apart.");
+                    }
+                });
+                row = row.union(now.response);
                 ui.horizontal(|ui| {
                     if ui.add_enabled(i > 0, egui::Button::new("⏶").small()).clicked() {
                         swap = Some((i, i - 1));
@@ -187,6 +212,9 @@ impl SettingsApp {
                         swap = Some((i, i + 1));
                     }
                 });
+                if row.hovered() {
+                    hovered = Some(i);
+                }
                 ui.end_row();
             }
         });
@@ -196,9 +224,33 @@ impl SettingsApp {
         if n == 0 {
             ui.label("No devices seen yet. They appear here after the first poll.");
         }
+        self.set_highlight(hovered.map(|i| self.cfg.devices[i].id.clone()));
+
+        egui::CollapsingHeader::new("Details").show(ui, |ui| {
+            egui::Grid::new("ids").num_columns(2).spacing([16.0, 2.0]).show(ui, |ui| {
+                for d in &self.cfg.devices {
+                    ui.label(&d.name);
+                    ui.label(RichText::new(&d.id).monospace().weak());
+                    ui.end_row();
+                }
+            });
+        });
+    }
+
+    /// Outline the hovered device on the live strip (index into config order; 0 = none).
+    fn set_highlight(&mut self, id: Option<String>) {
+        if id == self.highlight {
+            return;
+        }
+        // The bar addresses devices by position in its config, so only send once saved.
+        let index = id.as_ref().and_then(|id| self.saved.devices.iter().position(|d| &d.id == id)).map_or(0, |i| i + 1);
+        if let Some(h) = self.notify {
+            // SAFETY: posting to the bar's message window; harmless if it's gone.
+            let _ = unsafe { PostMessageW(HWND(h as _), WM_HIGHLIGHT, WPARAM(index), LPARAM(0)) };
+        }
+        self.highlight = id;
     }
 }
-
 /// Use the same Windows icon font as the strip, as a fallback after egui's text fonts, so the
 /// preview and the icon picker show the real glyphs.
 fn add_icon_font(ctx: &egui::Context) {
@@ -275,5 +327,9 @@ impl eframe::App for SettingsApp {
         });
 
         self.apply();
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.set_highlight(None);
     }
 }

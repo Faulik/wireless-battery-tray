@@ -45,19 +45,22 @@ pub struct DeviceConfig {
 /// How a device appears in the strip.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Display {
+    /// Icon; adds the name tag when another shown device uses the same icon.
     #[default]
+    Auto,
     Icon,
-    Label,
     IconLabel,
+    Label,
 }
 
 impl Display {
-    pub const ALL: [Display; 3] = [Display::Icon, Display::Label, Display::IconLabel];
+    pub const ALL: [Display; 4] = [Display::Auto, Display::Icon, Display::IconLabel, Display::Label];
     pub fn name(self) -> &'static str {
         match self {
-            Display::Icon => "Icon",
-            Display::Label => "Label",
-            Display::IconLabel => "Icon + label",
+            Display::Auto => "Auto",
+            Display::Icon => "Icon only",
+            Display::IconLabel => "Icon + tag",
+            Display::Label => "Text only",
         }
     }
 }
