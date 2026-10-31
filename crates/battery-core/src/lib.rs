@@ -7,6 +7,7 @@ pub enum Kind {
     Keyboard,
     Mouse,
     Headset,
+    Gamepad,
     Other,
 }
 

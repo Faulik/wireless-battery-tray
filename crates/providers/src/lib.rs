@@ -12,6 +12,7 @@ macro_rules! debug {
 }
 pub(crate) use debug;
 
+pub mod dualshock;
 #[cfg(windows)]
 pub mod gatt;
 pub mod keychron;
@@ -31,6 +32,7 @@ pub fn all() -> Vec<Box<dyn Provider>> {
     v.push(Box::new(logitech::LogitechProvider));
     v.push(Box::new(steelseries::SteelSeriesProvider));
     v.push(Box::new(keychron::KeychronProvider));
+    v.push(Box::new(dualshock::DualShockProvider));
     v
 }
 
