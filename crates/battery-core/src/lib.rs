@@ -1,8 +1,8 @@
 //! Core types shared by every battery provider and front-end.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kind {
     Keyboard,
     Mouse,
@@ -11,7 +11,7 @@ pub enum Kind {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum Level {
     /// Exact or device-reported percentage, 0..=100.

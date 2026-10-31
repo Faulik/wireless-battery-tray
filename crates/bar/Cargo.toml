@@ -1,0 +1,23 @@
+[package]
+name = "bar"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "batteries-bar"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+battery-core.workspace = true
+providers.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml = "0.8"
+tray-icon = "0.19"
+windows.workspace = true
+
+[build-dependencies]
+embed-manifest = "1.4"

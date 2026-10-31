@@ -1,0 +1,330 @@
+//! `batteries-bar`: device batteries on the Windows taskbar, with a tray icon.
+//! `batteries-bar --settings` opens the settings window (a separate process).
+
+#![windows_subsystem = "windows"]
+
+mod autostart;
+mod config;
+mod items;
+mod poller;
+mod render;
+mod strip;
+mod taskbar;
+mod tray;
+
+use std::cell::RefCell;
+
+use anyhow::Result;
+use windows::core::{w, PCWSTR};
+use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX};
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, PostMessageW,
+    PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SetTimer, TranslateMessage, CS_DBLCLKS, MSG,
+    WINDOW_EX_STYLE, WM_APP, WM_DISPLAYCHANGE, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
+    WS_OVERLAPPED,
+};
+
+use config::{Config, Reading};
+use poller::{Command, Poller};
+use render::D2dPainter;
+use strip::Strip;
+use tray::Action;
+
+pub const MSG_CLASS: PCWSTR = w!("BatteriesBarMsg");
+const WM_POLLED: u32 = WM_APP + 1;
+const WM_TRAY: u32 = WM_APP + 2;
+/// Sent by the settings process after it saved config.toml.
+pub const WM_RELOAD: u32 = WM_APP + 3;
+const TIMER_PLACE: usize = 1;
+
+struct App {
+    msg_hwnd: HWND,
+    cfg: Config,
+    readings: Vec<Reading>,
+    strip: Option<Strip>,
+    poller: Poller,
+    tray: tray_icon::TrayIcon,
+    menu: tray_icon::menu::Menu,
+    taskbar_created: u32,
+    dark: bool,
+}
+
+thread_local! {
+    static APP: RefCell<Option<App>> = const { RefCell::new(None) };
+}
+
+fn main() {
+    if std::env::args().any(|a| a == "--settings") {
+        // Filled in by the settings milestone.
+        return;
+    }
+    if let Err(e) = run() {
+        eprintln!("batteries-bar: {e:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
+    // SAFETY: Win32 setup on the UI thread.
+    unsafe {
+        let _mutex = CreateMutexW(None, true, w!("Local\\BatteriesBarSingleInstance"))?;
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            return Ok(());
+        }
+        InitCommonControlsEx(&INITCOMMONCONTROLSEX {
+            dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
+            dwICC: ICC_WIN95_CLASSES,
+        });
+        let instance = GetModuleHandleW(None)?;
+        for (class, style) in [(MSG_CLASS, Default::default()), (strip::CLASS, CS_DBLCLKS)] {
+            RegisterClassExW(&WNDCLASSEXW {
+                cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+                style,
+                lpfnWndProc: Some(wndproc),
+                hInstance: instance.into(),
+                lpszClassName: class,
+                ..Default::default()
+            });
+        }
+        // A hidden top-level window (not message-only: it must receive the TaskbarCreated broadcast).
+        let msg_hwnd = CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            MSG_CLASS,
+            w!("Battery bar"),
+            WS_OVERLAPPED,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            instance,
+            None,
+        )?;
+
+        let cfg = Config::load();
+        tray::install_handlers(msg_hwnd, WM_TRAY);
+        let monitors = taskbar::monitors();
+        let current = taskbar::pick(cfg.monitor.as_deref()).map(|m| m.name).unwrap_or_default();
+        let menu = tray::build_menu(&cfg, &monitors, &current, autostart::is_enabled())?;
+        let tray = tray::create(menu.clone(), "Battery bar: reading devices…")?;
+        let poller = Poller::start(msg_hwnd, WM_POLLED, cfg.poll_secs);
+        let mut app = App {
+            msg_hwnd,
+            cfg,
+            readings: Vec::new(),
+            strip: None,
+            poller,
+            tray,
+            menu,
+            taskbar_created: RegisterWindowMessageW(w!("TaskbarCreated")),
+            dark: system_dark(),
+        };
+        app.ensure_strip();
+        APP.with(|a| *a.borrow_mut() = Some(app));
+        SetTimer(msg_hwnd, TIMER_PLACE, 2000, None);
+
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        let _ = KillTimer(msg_hwnd, TIMER_PLACE);
+        APP.with(|a| a.borrow_mut().take());
+    }
+    Ok(())
+}
+
+unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    // Messages sent re-entrantly while App is borrowed (e.g. by SetWindowPos) go to DefWindowProc.
+    let handled = APP.with(|a| match a.try_borrow_mut() {
+        Ok(mut guard) => guard.as_mut().and_then(|app| app.handle(hwnd, msg, wp, lp)),
+        Err(_) => None,
+    });
+    match handled {
+        Some(r) => r,
+        // SAFETY: default processing for our own windows.
+        None => unsafe { DefWindowProcW(hwnd, msg, wp, lp) },
+    }
+}
+
+impl App {
+    fn handle(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
+        let _ = (wp, lp);
+        let is_strip = self.strip.as_ref().is_some_and(|s| s.hwnd == hwnd);
+        match msg {
+            WM_POLLED => {
+                if let Some(r) = self.poller.take() {
+                    self.readings = r;
+                    if self.cfg.remember(&self.readings) {
+                        let _ = self.cfg.save();
+                        self.rebuild_menu();
+                    }
+                    self.update_tray_tooltip();
+                    self.refresh();
+                }
+            }
+            WM_TRAY => {
+                for action in tray::take_actions() {
+                    self.on_action(action);
+                }
+            }
+            WM_RELOAD => self.reload(),
+            WM_TIMER if hwnd == self.msg_hwnd => self.refresh(),
+            WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
+                self.dark = system_dark();
+                self.strip = None;
+                self.rebuild_menu();
+                self.refresh();
+            }
+            WM_LBUTTONDBLCLK if is_strip => open_settings(),
+            WM_RBUTTONUP if is_strip => {
+                use tray_icon::menu::ContextMenu;
+                // SAFETY: our strip window; the menu is modal on this thread.
+                unsafe {
+                    self.menu.show_context_menu_for_hwnd(hwnd.0 as isize, None);
+                }
+            }
+            m if m == self.taskbar_created && m != 0 => {
+                // Explorer restarted: our child strip died with the old taskbar.
+                self.strip = None;
+                self.refresh();
+            }
+            _ => return None,
+        }
+        Some(LRESULT(0))
+    }
+
+    fn on_action(&mut self, action: Action) {
+        match action {
+            Action::Settings => open_settings(),
+            Action::Refresh => self.poller.send(Command::RefreshNow),
+            Action::Monitor(name) => {
+                self.cfg.monitor = Some(name);
+                self.strip = None;
+                self.save_and_apply();
+            }
+            Action::ToggleDevice(id) => {
+                if let Some(d) = self.cfg.devices.iter_mut().find(|d| d.id == id) {
+                    d.show = !d.show;
+                }
+                self.save_and_apply();
+            }
+            Action::Autostart => {
+                let _ = autostart::set(!autostart::is_enabled());
+                self.rebuild_menu();
+            }
+            // SAFETY: ends the message loop on this thread.
+            Action::Quit => unsafe { PostQuitMessage(0) },
+        }
+    }
+
+    fn save_and_apply(&mut self) {
+        let _ = self.cfg.save();
+        self.rebuild_menu();
+        self.refresh();
+    }
+
+    fn reload(&mut self) {
+        let new = Config::load();
+        if new.monitor != self.cfg.monitor {
+            self.strip = None;
+        }
+        if new.poll_secs != self.cfg.poll_secs {
+            self.poller.send(Command::SetInterval(new.poll_secs));
+        }
+        self.cfg = new;
+        self.rebuild_menu();
+        self.refresh();
+    }
+
+    fn ensure_strip(&mut self) {
+        let alive = self.strip.as_ref().is_some_and(|s| s.is_alive());
+        let wanted = taskbar::pick(self.cfg.monitor.as_deref());
+        let right_monitor = match (&self.strip, &wanted) {
+            (Some(s), Some(m)) => s.monitor_name() == m.name,
+            _ => false,
+        };
+        if alive && right_monitor {
+            return;
+        }
+        self.strip = None;
+        if let Some(m) = wanted {
+            match D2dPainter::new().and_then(|p| Strip::create(m, Box::new(p))) {
+                Ok(s) => self.strip = Some(s),
+                Err(e) => eprintln!("strip: {e:#}"),
+            }
+        }
+    }
+
+    fn refresh(&mut self) {
+        self.ensure_strip();
+        let items = items::build(&self.cfg, &self.readings);
+        if let Some(s) = self.strip.as_mut() {
+            if let Err(e) = s.update(&items, self.dark, self.cfg.text_size, self.cfg.compact) {
+                eprintln!("strip update: {e:#}");
+                self.strip = None;
+            }
+        }
+    }
+
+    fn rebuild_menu(&mut self) {
+        let monitors = taskbar::monitors();
+        let current = taskbar::pick(self.cfg.monitor.as_deref()).map(|m| m.name).unwrap_or_default();
+        if let Ok(menu) = tray::build_menu(&self.cfg, &monitors, &current, autostart::is_enabled()) {
+            self.tray.set_menu(Some(Box::new(menu.clone())));
+            self.menu = menu;
+        }
+    }
+
+    fn update_tray_tooltip(&self) {
+        let items = items::build(&self.cfg, &self.readings);
+        let text = if items.is_empty() {
+            "Battery bar: no devices".to_string()
+        } else {
+            items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join("  ")
+        };
+        let _ = self.tray.set_tooltip(Some(text));
+    }
+}
+
+/// Windows "system" (taskbar) theme: SystemUsesLightTheme = 0 means dark.
+fn system_dark() -> bool {
+    let mut value = 1u32;
+    let mut size = 4u32;
+    // SAFETY: DWORD out-buffer of the declared size.
+    let err = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"),
+            w!("SystemUsesLightTheme"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut u32 as *mut _),
+            Some(&mut size),
+        )
+    };
+    err.is_err() || value == 0
+}
+
+fn open_settings() {
+    // Already open? The settings process brings itself forward on a second launch.
+    let _ = unsafe { FindWindowW(PCWSTR::null(), w!("Battery bar settings")) };
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).arg("--settings").spawn();
+    }
+}
+
+#[allow(dead_code)]
+fn post_reload() {
+    // SAFETY: plain lookups/posts.
+    unsafe {
+        if let Ok(h) = FindWindowW(MSG_CLASS, PCWSTR::null()) {
+            let _ = PostMessageW(h, WM_RELOAD, WPARAM(0), LPARAM(0));
+        }
+    }
+}
