@@ -30,7 +30,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq 'bar').version
+          $version = ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq 'wireless-battery-tray').version
           if ($env:TAG -ne "v$version") {
             Write-Error "Tag $env:TAG does not match the workspace version $version"
             exit 1
@@ -46,9 +46,9 @@ jobs:
         run: |
           $v = '${{ steps.version.outputs.version }}'
           New-Item -ItemType Directory dist, pkg | Out-Null
-          Copy-Item target/release/batteries-bar.exe, target/release/batteries.exe, README.md pkg/
-          Compress-Archive -Path pkg/* -DestinationPath "dist/batteries_app-$v-windows-x64.zip"
-          Copy-Item target/release/batteries-bar.exe dist/
+          Copy-Item target/release/wireless-battery-tray.exe, target/release/wbt.exe, README.md, LICENSE pkg/
+          Compress-Archive -Path pkg/* -DestinationPath "dist/wireless-battery-tray-$v-windows-x64.zip"
+          Copy-Item target/release/wireless-battery-tray.exe dist/
           Get-ChildItem dist -File |
             ForEach-Object { '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
             Set-Content -Encoding ascii dist/SHA256SUMS.txt

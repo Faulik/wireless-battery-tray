@@ -22,8 +22,6 @@ use anyhow::Result;
 use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use hidapi::{HidApi, HidDevice};
 
-use crate::debug;
-
 const VID: u16 = 0x3434;
 const LINK_PIDS: &[u16] = &[0xD030];
 const FR_GET_STATE: u8 = 0xB2;

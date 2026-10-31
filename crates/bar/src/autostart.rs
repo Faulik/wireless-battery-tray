@@ -8,7 +8,9 @@ use windows::Win32::System::Registry::{
 };
 
 const RUN: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
-const VALUE: PCWSTR = w!("BatteriesBar");
+const VALUE: PCWSTR = w!("WirelessBatteryTray");
+/// Value name used before the rename.
+const OLD_VALUE: PCWSTR = w!("BatteriesBar");
 
 fn open() -> Result<HKEY> {
     let mut key = HKEY::default();
@@ -52,4 +54,21 @@ pub fn set(enabled: bool) -> Result<()> {
         bail!("update Run key: {err:?}");
     }
     Ok(())
+}
+
+/// Carry "Start with Windows" over from the old name, pointing it at this exe.
+pub fn migrate() {
+    let Ok(key) = open() else { return };
+    // SAFETY: existence query and delete of our own old value.
+    let had_old = unsafe {
+        let found = RegQueryValueExW(key, OLD_VALUE, None, None, None, None) == ERROR_SUCCESS;
+        if found {
+            let _ = RegDeleteValueW(key, OLD_VALUE);
+        }
+        let _ = RegCloseKey(key);
+        found
+    };
+    if had_old {
+        let _ = set(true);
+    }
 }

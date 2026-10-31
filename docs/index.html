@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wireless Battery Tray</title>
+<meta name="description" content="Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows taskbar.">
+<style>
+  :root {
+    --bg: #1c1c1c;
+    --panel: #202020;
+    --taskbar: #1f1f1f;
+    --line: #2e2e2e;
+    --text: #f3f3f3;
+    --muted: #a8a8a8;
+    --accent: #4cc2ff;
+    --accent-ink: #00243a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 72px 16px 48px; }
+  h1 {
+    font: 600 clamp(2.2rem, 6vw, 3.4rem)/1.1 "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    margin: 0 0 16px;
+    letter-spacing: -0.02em;
+  }
+  .pitch { font-size: 1.2rem; color: var(--muted); max-width: 40em; margin: 0 0 32px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 56px; }
+  .btn {
+    display: inline-block;
+    padding: 10px 22px;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid var(--line);
+    color: var(--text);
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:hover { filter: brightness(1.1); }
+  .taskbar {
+    background: var(--taskbar);
+    border-top: 1px solid #3a3a3a;
+    border-radius: 8px;
+    padding: 14px 20px;
+    display: flex;
+    justify-content: flex-end;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    margin-bottom: 64px;
+  }
+  .taskbar img {
+    width: 548px;
+    max-width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+    display: block;
+  }
+  h2 { font-size: 1.35rem; margin: 48px 0 16px; }
+  ul.features { padding: 0; margin: 0; list-style: none; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  ul.features li { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; color: var(--muted); }
+  ul.features b { color: var(--text); display: block; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  td.c { text-align: center; }
+  footer { border-top: 1px solid var(--line); margin-top: 64px; padding-top: 24px; color: var(--muted); font-size: 0.9rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Wireless Battery Tray</h1>
+  <p class="pitch">Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows taskbar of the monitor you choose.</p>
+  <div class="actions">
+    <a class="btn primary" href="https://github.com/Faulik/wireless-battery-tray/releases/latest">Download for Windows</a>
+    <a class="btn" href="https://github.com/Faulik/wireless-battery-tray">View on GitHub</a>
+  </div>
+
+  <div class="taskbar">
+    <img src="strip.png" alt="The strip on the taskbar: earbuds 80%, mouse 100%, headset charging at 75%" width="274" height="52">
+  </div>
+
+  <h2>What it does</h2>
+  <ul class="features">
+    <li><b>Always in view</b>One icon and percentage per device, inside the taskbar next to the clock.</li>
+    <li><b>Any monitor</b>Pick the display, left or right side, and an offset.</li>
+    <li><b>Charging and low battery</b>A bolt while charging, red below your chosen level.</li>
+    <li><b>Out of the way</b>Hides with the taskbar in full-screen apps and follows light/dark mode.</li>
+    <li><b>Your layout</b>Show, hide, reorder and relabel devices with a live preview.</li>
+    <li><b>Read-only</b>Only ever queries devices. Optional, click-to-install updates.</li>
+  </ul>
+
+  <h2>Supported devices</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Device / family</th><th>Connection</th><th>Battery</th><th>Charging</th></tr></thead>
+      <tbody>
+        <tr><td>Bluetooth headsets, earbuds and others that report battery to Windows</td><td>Bluetooth classic</td><td class="c">✓</td><td class="c">–</td></tr>
+        <tr><td>BLE keyboards and mice, including split keyboards</td><td>Bluetooth LE</td><td class="c">✓</td><td class="c">–</td></tr>
+        <tr><td>Logitech on Unifying, Bolt and Lightspeed receivers</td><td>2.4 GHz receiver</td><td class="c">✓</td><td class="c">✓</td></tr>
+        <tr><td>SteelSeries Arctis Nova 7 family</td><td>2.4 GHz dongle</td><td class="c">✓</td><td class="c">✓</td></tr>
+        <tr><td>Sony DualShock 4</td><td>Bluetooth, USB</td><td class="c">✓</td><td class="c">✓</td></tr>
+        <tr><td>Keychron keyboards on a Keychron Link</td><td>2.4 GHz receiver</td><td class="c">–</td><td class="c">–</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    Windows 10/11, x64. Free and open source under the MIT license ·
+    <a href="https://github.com/Faulik/wireless-battery-tray#readme">Documentation</a>
+  </footer>
+</main>
+</body>
+</html>

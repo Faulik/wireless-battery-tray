@@ -18,8 +18,8 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use crate::config::dir;
 
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
-const LATEST_URL: &str = "https://api.github.com/repos/Faulik/batteries_app/releases/latest";
-const EXE_ASSET: &str = "batteries-bar.exe";
+const LATEST_URL: &str = "https://api.github.com/repos/Faulik/wireless-battery-tray/releases/latest";
+const EXE_ASSET: &str = "wireless-battery-tray.exe";
 const SUMS_ASSET: &str = "SHA256SUMS.txt";
 const FIRST_CHECK: Duration = Duration::from_secs(30);
 const INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -138,7 +138,7 @@ fn now() -> u64 {
 }
 
 fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().timeout(Duration::from_secs(60)).user_agent(concat!("batteries-bar/", env!("CARGO_PKG_VERSION"))).build()
+    ureq::AgentBuilder::new().timeout(Duration::from_secs(60)).user_agent(concat!("wireless-battery-tray/", env!("CARGO_PKG_VERSION"))).build()
 }
 
 #[derive(Deserialize)]
@@ -280,8 +280,8 @@ mod tests {
 
     #[test]
     fn finds_hash_in_sums_file() {
-        let sums = "AB12  batteries_app-0.1.0-windows-x64.zip\nCD34 *batteries-bar.exe\n";
-        assert_eq!(expected_hash(sums, "batteries-bar.exe").as_deref(), Some("cd34"));
+        let sums = "AB12  wireless-battery-tray-0.1.0-windows-x64.zip\nCD34 *wireless-battery-tray.exe\n";
+        assert_eq!(expected_hash(sums, "wireless-battery-tray.exe").as_deref(), Some("cd34"));
         assert_eq!(expected_hash(sums, "missing.exe"), None);
     }
 }

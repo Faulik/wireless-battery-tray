@@ -21,7 +21,7 @@ use crate::items::Item;
 use crate::render::{Look, StripPainter};
 use crate::taskbar::{self, Monitor, Position, Taskbar};
 
-pub const CLASS: PCWSTR = w!("BatteriesBarStrip");
+pub const CLASS: PCWSTR = w!("WirelessBatteryTrayStrip");
 
 pub struct Strip {
     pub hwnd: HWND,
@@ -45,7 +45,7 @@ impl Strip {
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
                 CLASS,
-                w!("Battery bar"),
+                w!("Wireless Battery Tray"),
                 WS_POPUP,
                 0,
                 0,
@@ -90,7 +90,7 @@ impl Strip {
             return Ok(());
         }
 
-        let repaint = self.painted.as_ref().map_or(true, |(i, l)| i != items || *l != look);
+        let repaint = self.painted.as_ref().is_none_or(|(i, l)| i != items || *l != look);
         if repaint {
             self.size = self.painter.paint(items, look)?;
             self.set_tooltip(items);

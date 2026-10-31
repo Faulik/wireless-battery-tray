@@ -1,4 +1,4 @@
-//! `%APPDATA%\batteries_app\config.toml` plus the last poll result (`snapshot.json`) that the
+//! `%APPDATA%\wireless-battery-tray\config.toml` plus the last poll result (`snapshot.json`) that the
 //! settings window uses for its preview.
 
 use std::path::PathBuf;
@@ -154,9 +154,21 @@ impl Default for Config {
     }
 }
 
+fn appdata() -> PathBuf {
+    std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
+}
+
 pub fn dir() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    base.join("batteries_app")
+    appdata().join("wireless-battery-tray")
+}
+
+/// Copy config.toml from the folder used before the rename, once.
+pub fn migrate() {
+    let old = appdata().join("batteries_app").join("config.toml");
+    let new = Config::path();
+    if old.exists() && !new.exists() && std::fs::create_dir_all(dir()).is_ok() {
+        let _ = std::fs::copy(old, new);
+    }
 }
 
 impl Config {

@@ -1,4 +1,4 @@
-//! Settings window (`batteries-bar --settings --notify <hwnd>`), a separate short-lived process
+//! Settings window (`wireless-battery-tray --settings --notify <hwnd>`), a separate short-lived process
 //! so the strip never hosts a GUI toolkit. Every change is written to config.toml at once and
 //! the bar is told to reload, so the taskbar updates live alongside the preview here.
 
@@ -15,7 +15,7 @@ use crate::taskbar::{self, Monitor, Position};
 use crate::updater::{self, Status};
 use crate::{autostart, WM_CHECK_UPDATES, WM_HIGHLIGHT, WM_INSTALL_UPDATE, WM_RELOAD};
 
-pub const TITLE: &str = "Battery bar settings";
+pub const TITLE: &str = "Wireless Battery Tray settings";
 
 pub fn run(notify: Option<isize>) -> Result<()> {
     let options = eframe::NativeOptions {

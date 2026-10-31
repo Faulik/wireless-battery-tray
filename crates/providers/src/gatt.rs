@@ -16,8 +16,6 @@ use windows::Devices::Bluetooth::{BluetoothCacheMode, BluetoothConnectionStatus,
 use windows::Devices::Enumeration::DeviceInformation;
 use windows::Storage::Streams::DataReader;
 
-use crate::debug;
-
 pub struct GattProvider;
 
 impl Provider for GattProvider {

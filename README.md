@@ -1,62 +1,120 @@
-# batteries_app
+# Wireless Battery Tray
 
-Battery levels of your keyboards, mice, headsets and controllers, shown as a small strip on the
-Windows 11 taskbar of the monitor you choose.
+[![CI](https://github.com/Faulik/wireless-battery-tray/actions/workflows/ci.yml/badge.svg)](https://github.com/Faulik/wireless-battery-tray/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Faulik/wireless-battery-tray)](https://github.com/Faulik/wireless-battery-tray/releases/latest)
 
-```
-cargo run --release --bin batteries-bar      # taskbar strip + tray icon
-cargo run --release --bin batteries          # one-off table in the terminal (--json for JSON)
-```
+Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows
+taskbar of the monitor you choose.
 
-Build needs the MSVC Rust toolchain (`rustup default stable-x86_64-pc-windows-msvc`), Rust 1.84+.
+<p align="center"><img src="docs/strip.png" alt="The strip on the taskbar: earbuds 80%, mouse 100%, headset charging at 75%"></p>
 
-## The strip
-- One icon per device (keyboard, mouse, headset, headphones, earbuds, gamepad) with its percentage;
-  ⚡ while charging, red below the low-battery level. Disconnected devices are hidden (optionally
-  shown dimmed). When two shown devices share an icon, a short name tag is added.
-- Sits inside the taskbar on the right (next to the tray/clock) or the left, with an optional
-  offset; hides with the taskbar (full-screen apps, auto-hide). Follows the light/dark theme.
-- Hover for full names, connection and source. Double-click (or the tray icon) for Settings;
-  right-click for the menu.
-- Tray menu: Settings, Refresh now, Show on (monitor), Position, Devices, Start with Windows
-  (off by default), Quit.
-- Settings (`batteries-bar --settings`, an egui window): live preview; per device show/hide,
-  display mode, icon, short tag, order; monitor, position, text size, compact two-row mode,
-  low-battery level, poll interval. Hovering a device outlines it on the strip.
-- Batteries are polled in the background every 60 s (configurable).
-- Updates: 30 s after start and then daily the bar asks GitHub for the latest release. When a
-  newer one exists the tray icon gets a blue dot and the menu offers "Update to vX.Y.Z"; clicking
-  it downloads `batteries-bar.exe`, checks it against `SHA256SUMS.txt`, swaps it in and restarts.
-  Nothing is installed without that click. Settings → Updates: turn checks off, "Check now".
-- Config: `%APPDATA%\batteries_app\config.toml`.
+**[Website](https://faulik.github.io/wireless-battery-tray/)** ·
+**[Download](https://github.com/Faulik/wireless-battery-tray/releases/latest)**
 
-## Releases
-Download from [Releases](https://github.com/Faulik/batteries_app/releases): the zip has both
-binaries and this README; `batteries-bar.exe` is also attached on its own (that's what the
-updater fetches). To publish one, bump `version` in the workspace `Cargo.toml`, commit, then
-`git tag vX.Y.Z && git push origin vX.Y.Z`; `.github/workflows/release.yml` tests, builds and
-publishes it (and fails if the tag doesn't match the version).
+## Features
+- One icon per device (keyboard, mouse, headset, headphones, earbuds, gamepad) with its
+  percentage; ⚡ while charging, red below your low-battery level.
+- Lives inside the taskbar, next to the clock or on the left, on any monitor. Hides with the
+  taskbar (full-screen apps, auto-hide) and follows the light/dark theme.
+- Disconnected devices are hidden (or shown dimmed). When two devices share an icon, a short name
+  tag tells them apart.
+- Hover for full names and connection; double-click for Settings, right-click for the menu.
+- Settings with a live preview: show/hide, order, icon and tag per device, monitor, position,
+  text size, a compact two-row mode, low-battery level and poll interval.
+- Only ever reads from devices: every request it sends is a read/query.
+- Optional update check (see [Updates](#updates)).
+
+## Install
+1. Download `wireless-battery-tray.exe` (or the zip) from
+   [Releases](https://github.com/Faulik/wireless-battery-tray/releases/latest).
+2. Put it anywhere, e.g. `%LOCALAPPDATA%\Programs\Wireless Battery Tray\`, and run it.
+3. Windows SmartScreen may warn that the app is unrecognised (it isn't code-signed): choose
+   **More info → Run anyway**.
+4. To start it at login, tick **Start with Windows** in the tray menu or Settings.
+
+Windows 10/11, x64. The zip also contains `wbt.exe`, a command-line tool that prints every
+battery once (`wbt --json` for JSON).
 
 ## Supported devices
-| Source | Devices |
-|---|---|
-| Windows Bluetooth battery property | Bluetooth classic headsets/earbuds (e.g. SOUNDPEATS H3) |
-| BLE Battery Service (GATT) | BLE keyboards/mice, every battery level characteristic (split keyboards) |
-| Logitech HID++ 2.0 | Devices on Unifying/Bolt/Lightspeed receivers (MX Master 3, K580, ...) |
-| SteelSeries | Arctis Nova 7 family dongles (protocol from HeadsetControl) |
-| Sony | DualShock 4 over Bluetooth/USB |
-| Keychron Link | Lists paired devices; battery only where the firmware reports it |
+| Device / family | Connection | Battery | Charging | Notes |
+|---|---|---|---|---|
+| Bluetooth headsets, earbuds and other devices that report battery to Windows | Bluetooth classic | ✓ | – | Read from the battery value Windows shows in Settings → Bluetooth |
+| BLE keyboards and mice (Battery Service) | Bluetooth LE | ✓ | – | Every battery characteristic, so split keyboards can show both halves |
+| Logitech devices on Unifying, Bolt and Lightspeed receivers | 2.4 GHz receiver | ✓ | ✓ | HID++ 2.0; works alongside Logi Options+ |
+| SteelSeries Arctis Nova 7 family | 2.4 GHz dongle | ✓ | ✓ | |
+| Sony DualShock 4 | Bluetooth, USB | ✓ | ✓ | |
+| Keychron keyboards on a Keychron Link receiver | 2.4 GHz receiver | – | – | Listed as connected only; see below |
 
-Device type is detected in layers (BLE appearance, Bluetooth class of device, Windows device
-category, then a model-name table); Settings → Details shows which one decided.
-Every provider only sends read/query requests to devices.
+Device type is worked out from the BLE appearance, the Bluetooth class of device, the Windows
+device category and finally the model name. Settings → Details shows which one decided.
 
-Per-device findings, protocols and known limits (Glove80 right half, Keychron K3 HE over 2.4 GHz,
-MX Master 3 while charging): [device-inventory.md](device-inventory.md).
+## Known limitations
+- **Keychron keyboards over 2.4 GHz** (e.g. K3 HE on a Keychron Link): the receiver doesn't
+  pass a battery level on, so they only show as connected. In Bluetooth mode they report battery
+  normally.
+- **Logitech MX Master 3 while charging** reports no level, only that it is charging, so you see
+  just the ⚡ until it reports a level again.
+- **ZMK split keyboards** (e.g. Glove80) only show the central half unless the firmware is built
+  with `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y` (and
+  `CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y`); then both halves appear.
+- **SteelSeries Arctis** headsets on older firmware report battery in 25% steps.
+- **DualShock 4** reports in 10% steps, and is invisible to other apps when DS4Windows with
+  HidHide is hiding it.
 
-## Layout
+## Configuration
+Settings are saved to `%APPDATA%\wireless-battery-tray\config.toml` as you change them. You can
+also edit the file while the app isn't running:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `monitor` | primary | Monitor to show the strip on, e.g. `\\.\DISPLAY2` |
+| `position` | `Right` | `Right` (next to the tray) or `Left` |
+| `offset` | `0` | Extra distance from the tray (Right) or the left edge (Left), in pixels |
+| `text_size` | `9.0` | Text size in points |
+| `compact` | `false` | Two rows instead of one |
+| `low_threshold` | `20` | Percent below which a level turns red |
+| `poll_secs` | `60` | Seconds between battery reads |
+| `show_offline` | `false` | Show disconnected devices dimmed |
+| `check_updates` | `true` | Check GitHub for new releases |
+| `[[devices]]` | | One entry per device seen: `show`, `display`, `label`, `icon` |
+
+## Updates
+30 seconds after start and then once a day, the app asks GitHub for the latest release. If there
+is a newer one, the tray icon gets a blue dot and the menu offers **Update to vX.Y.Z**. Clicking it
+downloads `wireless-battery-tray.exe`, checks it against the release's `SHA256SUMS.txt`, swaps it
+in and restarts. Nothing is installed without that click. Settings → Updates turns the check off
+or runs it now.
+
+<details>
+<summary><b>Build from source</b></summary>
+
+Needs the MSVC Rust toolchain (`rustup default stable-x86_64-pc-windows-msvc`), Rust 1.84+.
+
+```
+cargo run --release --bin wireless-battery-tray   # taskbar strip + tray icon
+cargo run --release --bin wbt                     # one-off table in the terminal (--json for JSON)
+```
+
+Set `BATTERIES_DEBUG=1` to print what each provider sees.
+
+Layout:
 - `crates/battery-core`: `Battery`, `Level`, `Kind`, the `Provider` trait, kind detection, merging.
 - `crates/providers`: one module per source (`pnp`, `gatt`, `logitech`, `steelseries`,
   `dualshock`, `keychron`).
-- `crates/cli`: the `batteries` binary.
-- `crates/bar`: the `batteries-bar` taskbar strip, tray and settings window.
+- `crates/cli`: the `wbt` binary.
+- `crates/bar`: the `wireless-battery-tray` strip, tray, settings window and updater.
+
+Releases: bump `version` in the workspace `Cargo.toml`, commit, then push a `vX.Y.Z` tag.
+`.github/workflows/release.yml` tests, builds and publishes it, and fails if the tag doesn't match
+the version.
+</details>
+
+## Acknowledgements
+Protocol references, with thanks:
+[Solaar](https://github.com/pwr-Solaar/Solaar) (Logitech HID++),
+[HeadsetControl](https://github.com/Sapd/HeadsetControl) (SteelSeries) and the Linux kernel's
+[hid-playstation](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-playstation.c)
+driver (DualShock 4). No code was copied from them.
+
+## License
+[MIT](LICENSE)

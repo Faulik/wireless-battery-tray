@@ -125,24 +125,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "bar"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "battery-core",
- "eframe",
- "embed-manifest",
- "providers",
- "serde",
- "serde_json",
- "sha2",
- "toml",
- "tray-icon",
- "ureq",
- "windows",
-]
-
-[[package]]
 name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -334,16 +316,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ced0551234e87afee12411d535648dd89d2e7f34c78b753395567aff3d447ff"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "cli"
-version = "0.1.0"
-dependencies = [
- "battery-core",
- "providers",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -2998,6 +2970,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wbt"
+version = "0.1.0"
+dependencies = [
+ "battery-core",
+ "providers",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "web-sys"
 version = "0.3.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3362,6 +3344,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f593a95398737aeed53e489c785df13f3618e41dbcd6718c6addbf1395aa6876"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wireless-battery-tray"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "battery-core",
+ "eframe",
+ "embed-manifest",
+ "providers",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
+ "tray-icon",
+ "ureq",
+ "windows",
 ]
 
 [[package]]

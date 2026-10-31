@@ -2,7 +2,7 @@
 
 use battery_core::Provider;
 
-/// `eprintln!` when `BATTERIES_DEBUG` is set.
+/// `eprintln!` when `BATTERIES_DEBUG` is set. Defined before the `mod`s, so it is in scope in all of them.
 macro_rules! debug {
     ($($arg:tt)*) => {
         if std::env::var_os("BATTERIES_DEBUG").is_some() {
@@ -10,7 +10,6 @@ macro_rules! debug {
         }
     };
 }
-pub(crate) use debug;
 
 pub mod dualshock;
 #[cfg(windows)]

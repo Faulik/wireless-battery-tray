@@ -15,8 +15,6 @@ use anyhow::Result;
 use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use hidapi::{HidApi, HidDevice};
 
-use crate::debug;
-
 const VID: u16 = 0x054C;
 /// DS4 v1, DS4 v2, Sony wireless adapter.
 const PIDS: &[u16] = &[0x05C4, 0x09CC, 0x0BA0];

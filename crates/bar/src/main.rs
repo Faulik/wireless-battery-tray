@@ -1,5 +1,5 @@
-//! `batteries-bar`: device batteries on the Windows taskbar, with a tray icon.
-//! `batteries-bar --settings` opens the settings window (a separate process).
+//! Wireless Battery Tray: device batteries on the Windows taskbar, with a tray icon.
+//! `wireless-battery-tray --settings` opens the settings window (a separate process).
 
 #![windows_subsystem = "windows"]
 
@@ -37,7 +37,7 @@ use strip::Strip;
 use tray::Action;
 use updater::Updater;
 
-pub const MSG_CLASS: PCWSTR = w!("BatteriesBarMsg");
+pub const MSG_CLASS: PCWSTR = w!("WirelessBatteryTrayMsg");
 const WM_POLLED: u32 = WM_APP + 1;
 const WM_TRAY: u32 = WM_APP + 2;
 /// Sent by the settings process after it saved config.toml.
@@ -74,12 +74,12 @@ fn main() {
     if args.iter().any(|a| a == "--settings") {
         let notify = args.iter().position(|a| a == "--notify").and_then(|i| args.get(i + 1)).and_then(|h| h.parse().ok());
         if let Err(e) = settings::run(notify) {
-            eprintln!("batteries-bar: {e:#}");
+            eprintln!("wireless-battery-tray: {e:#}");
         }
         return;
     }
     if let Err(e) = run() {
-        eprintln!("batteries-bar: {e:#}");
+        eprintln!("wireless-battery-tray: {e:#}");
         std::process::exit(1);
     }
 }
@@ -91,7 +91,7 @@ fn run() -> Result<()> {
         let updated = std::env::args().any(|a| a == "--updated");
         let mut tries = 0;
         let _mutex = loop {
-            let m = CreateMutexW(None, true, w!("Local\\BatteriesBarSingleInstance"))?;
+            let m = CreateMutexW(None, true, w!("Local\\WirelessBatteryTraySingleInstance"))?;
             if GetLastError() != ERROR_ALREADY_EXISTS {
                 break m;
             }
@@ -105,6 +105,8 @@ fn run() -> Result<()> {
         if let Ok(exe) = std::env::current_exe() {
             let _ = std::fs::remove_file(updater::old_path(&exe));
         }
+        config::migrate();
+        autostart::migrate();
         let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX { dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32, dwICC: ICC_WIN95_CLASSES });
         let instance = GetModuleHandleW(None)?;
         for (class, style) in [(MSG_CLASS, Default::default()), (strip::CLASS, CS_DBLCLKS)] {
@@ -118,14 +120,15 @@ fn run() -> Result<()> {
             });
         }
         // A hidden top-level window (not message-only: it must receive the TaskbarCreated broadcast).
-        let msg_hwnd = CreateWindowExW(WINDOW_EX_STYLE::default(), MSG_CLASS, w!("Battery bar"), WS_OVERLAPPED, 0, 0, 0, 0, None, None, instance, None)?;
+        let msg_hwnd =
+            CreateWindowExW(WINDOW_EX_STYLE::default(), MSG_CLASS, w!("Wireless Battery Tray"), WS_OVERLAPPED, 0, 0, 0, 0, None, None, instance, None)?;
 
         let cfg = Config::load();
         tray::install_handlers(msg_hwnd, WM_TRAY);
         let monitors = taskbar::monitors();
         let current = taskbar::pick(cfg.monitor.as_deref()).map(|m| m.name).unwrap_or_default();
         let menu = tray::build_menu(&cfg, &monitors, &current, autostart::is_enabled(), None)?;
-        let tray = tray::create(menu.clone(), "Battery bar: reading devices…")?;
+        let tray = tray::create(menu.clone(), "Wireless Battery Tray: reading devices…")?;
         let poller = Poller::start(msg_hwnd, WM_POLLED, cfg.poll_secs);
         let updater = Updater::start(msg_hwnd, WM_UPDATER, cfg.check_updates);
         let mut app = App {
@@ -247,7 +250,7 @@ impl App {
                 self.rebuild_menu();
             }
             Action::InstallUpdate => {
-                let _ = self.tray.set_tooltip(Some("Battery bar: downloading update…"));
+                let _ = self.tray.set_tooltip(Some("Wireless Battery Tray: downloading update…"));
                 self.updater.send(updater::Command::Install);
             }
             // SAFETY: ends the message loop on this thread.
@@ -264,7 +267,7 @@ impl App {
                 self.update_tray_tooltip();
                 let text: Vec<u16> = format!("The update could not be installed:\n{e}").encode_utf16().chain(Some(0)).collect();
                 // SAFETY: modal message box owned by our hidden window.
-                unsafe { MessageBoxW(self.msg_hwnd, PCWSTR(text.as_ptr()), w!("Battery bar"), MB_OK | MB_ICONWARNING) };
+                unsafe { MessageBoxW(self.msg_hwnd, PCWSTR(text.as_ptr()), w!("Wireless Battery Tray"), MB_OK | MB_ICONWARNING) };
             }
             None => {
                 tray::set_badge(&self.tray, self.updater.available().is_some());
@@ -340,7 +343,11 @@ impl App {
 
     fn update_tray_tooltip(&self) {
         let items = items::build(&self.cfg, &self.readings);
-        let text = if items.is_empty() { "Battery bar: no devices".to_string() } else { items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join("  ") };
+        let text = if items.is_empty() {
+            "Wireless Battery Tray: no devices".to_string()
+        } else {
+            items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>().join("  ")
+        };
         let _ = self.tray.set_tooltip(Some(text));
     }
 }

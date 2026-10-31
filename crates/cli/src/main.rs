@@ -1,4 +1,4 @@
-//! `batteries [--json]` - print the battery of every supported device once.
+//! `wbt [--json]` - print the battery of every supported device once.
 
 use battery_core::{Battery, Level};
 use serde::Serialize;

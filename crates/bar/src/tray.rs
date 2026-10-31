@@ -64,10 +64,8 @@ fn parse(id: &str) -> Option<Action> {
                 Action::Position(Position::ALL.into_iter().find(|x| format!("{x:?}") == p)?)
             } else if let Some(m) = id.strip_prefix("monitor:") {
                 Action::Monitor(m.to_string())
-            } else if let Some(d) = id.strip_prefix("device:") {
-                Action::ToggleDevice(d.to_string())
             } else {
-                return None;
+                Action::ToggleDevice(id.strip_prefix("device:")?.to_string())
             }
         }
     })

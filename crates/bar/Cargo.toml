@@ -1,12 +1,12 @@
 [package]
-name = "bar"
+name = "wireless-battery-tray"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "batteries-bar"
+name = "wireless-battery-tray"
 path = "src/main.rs"
 
 [dependencies]

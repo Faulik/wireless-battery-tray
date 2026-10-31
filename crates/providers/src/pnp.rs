@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 use battery_core::{Battery, Kind, KindSource, Level, Provider};
 
-use crate::debug;
 use windows::core::{GUID, PCWSTR};
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Get_Child, CM_Get_DevNode_PropertyW, CM_Get_Device_IDW, CM_Get_Sibling, CM_Locate_DevNodeW, CM_LOCATE_DEVNODE_NORMAL, CR_SUCCESS,
