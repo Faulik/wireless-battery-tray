@@ -221,6 +221,10 @@ impl App {
                 self.strip = None;
                 self.save_and_apply();
             }
+            Action::Position(p) => {
+                self.cfg.position = p;
+                self.save_and_apply();
+            }
             Action::ToggleDevice(id) => {
                 if let Some(d) = self.cfg.devices.iter_mut().find(|d| d.id == id) {
                     d.show = !d.show;
@@ -281,7 +285,7 @@ impl App {
             i.highlight = self.highlight.as_ref() == Some(&i.device_id);
         }
         if let Some(s) = self.strip.as_mut() {
-            if let Err(e) = s.update(&items, self.dark, self.cfg.text_size, self.cfg.compact) {
+            if let Err(e) = s.update(&items, self.dark, self.cfg.text_size, self.cfg.compact, self.cfg.position, self.cfg.offset) {
                 eprintln!("strip update: {e:#}");
                 self.strip = None;
             }

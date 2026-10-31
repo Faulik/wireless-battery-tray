@@ -7,6 +7,8 @@ use anyhow::Result;
 use battery_core::{Battery, Kind, KindSource, Level};
 use serde::{Deserialize, Serialize};
 
+use crate::taskbar::Position;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -19,6 +21,10 @@ pub struct Config {
     pub text_size: f32,
     /// Two rows instead of one.
     pub compact: bool,
+    /// Which side of the taskbar.
+    pub position: Position,
+    /// Extra distance in pixels from the tray (Right) or the left end (Left).
+    pub offset: i32,
     /// Show devices that are off/asleep with no reading as a dim dash.
     pub show_offline: bool,
     /// Every device ever seen, in display order.
@@ -137,6 +143,8 @@ impl Default for Config {
             low_threshold: 20,
             text_size: 9.0,
             compact: false,
+            position: Position::Right,
+            offset: 0,
             show_offline: false,
             devices: Vec::new(),
         }

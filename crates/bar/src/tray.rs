@@ -11,13 +11,14 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::config::Config;
 use crate::items;
-use crate::taskbar::Monitor;
+use crate::taskbar::{Monitor, Position};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     Settings,
     Refresh,
     Monitor(String),
+    Position(Position),
     ToggleDevice(String),
     Autostart,
     Quit,
@@ -57,7 +58,9 @@ fn parse(id: &str) -> Option<Action> {
         "autostart" => Action::Autostart,
         "quit" => Action::Quit,
         _ => {
-            if let Some(m) = id.strip_prefix("monitor:") {
+            if let Some(p) = id.strip_prefix("position:") {
+                Action::Position(Position::ALL.into_iter().find(|x| format!("{x:?}") == p)?)
+            } else if let Some(m) = id.strip_prefix("monitor:") {
                 Action::Monitor(m.to_string())
             } else if let Some(d) = id.strip_prefix("device:") {
                 Action::ToggleDevice(d.to_string())
@@ -83,12 +86,18 @@ pub fn build_menu(cfg: &Config, monitors: &[Monitor], current_monitor: &str, aut
     }
 
     let monitor_menu = Submenu::with_items("Show on", true, &refs(&monitor_items))?;
+    let position_items: Vec<CheckMenuItem> = Position::ALL
+        .iter()
+        .map(|p| CheckMenuItem::with_id(format!("position:{p:?}"), p.name(), true, *p == cfg.position, None))
+        .collect();
+    let position_menu = Submenu::with_items("Position", true, &refs(&position_items))?;
     let device_menu = Submenu::with_items("Devices", !device_items.is_empty(), &refs(&device_items))?;
     let menu = Menu::with_items(&[
         &MenuItem::with_id("settings", "Settings…", true, None),
         &MenuItem::with_id("refresh", "Refresh now", true, None),
         &PredefinedMenuItem::separator(),
         &monitor_menu,
+        &position_menu,
         &device_menu,
         &CheckMenuItem::with_id("autostart", "Start with Windows", true, autostart, None),
         &PredefinedMenuItem::separator(),

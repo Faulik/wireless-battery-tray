@@ -11,7 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::config::{load_snapshot, Config, Display, Icon, Reading};
 use crate::items::{self, Style};
-use crate::taskbar::{self, Monitor};
+use crate::taskbar::{self, Monitor, Position};
 use crate::{autostart, WM_HIGHLIGHT, WM_RELOAD};
 
 pub const TITLE: &str = "Battery bar settings";
@@ -246,6 +246,13 @@ impl SettingsApp {
         });
     }
 
+    /// Why the strip can't go where the position setting asks, if it can't (checked with a typical strip width).
+    fn placement_note(&self) -> Option<&'static str> {
+        let monitor = taskbar::pick(self.cfg.monitor.as_deref())?;
+        let tb = taskbar::taskbar_for(&monitor)?;
+        tb.place(240 * tb.dpi as i32 / 96, self.cfg.position, self.cfg.offset).1
+    }
+
     /// Outline the hovered device on the live strip (index into config order; 0 = none).
     fn set_highlight(&mut self, id: Option<String>) {
         if id == self.highlight {
@@ -319,6 +326,15 @@ impl eframe::App for SettingsApp {
                         }
                     }
                 });
+                egui::ComboBox::from_label("Position").selected_text(self.cfg.position.name()).show_ui(ui, |ui| {
+                    for p in Position::ALL {
+                        ui.selectable_value(&mut self.cfg.position, p, p.name());
+                    }
+                });
+                ui.add(egui::Slider::new(&mut self.cfg.offset, 0..=600).text("Offset (px)"));
+                if let Some(why) = self.placement_note() {
+                    ui.label(RichText::new(format!("⚠ Shown on the right instead: {why}.")).color(Color32::from_rgb(230, 160, 40)));
+                }
                 ui.add(egui::Slider::new(&mut self.cfg.text_size, 7.0..=14.0).step_by(0.5).text("Text size (pt)"));
                 ui.checkbox(&mut self.cfg.compact, "Compact: two rows");
                 ui.add_space(12.0);

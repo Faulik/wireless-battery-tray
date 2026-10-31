@@ -70,7 +70,36 @@ pub struct Taskbar {
     pub dpi: u32,
     /// Screen x where the free area on the right ends (tray / clock start).
     pub free_right: i32,
+    /// Screen x where the free area on the left starts (after the Widgets button, if any).
+    pub free_left: i32,
+    /// Left edge of the Start button / centred app icons, when known.
+    pub icons_left: Option<i32>,
+    /// Taskbar icons are left-aligned (TaskbarAl = 0): no free space on the left.
+    pub left_aligned: bool,
 }
+
+/// Where the strip sits on the taskbar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum Position {
+    /// Just left of the tray / clock.
+    #[default]
+    Right,
+    /// At the left end, after the Widgets button.
+    Left,
+}
+
+impl Position {
+    pub const ALL: [Position; 2] = [Position::Right, Position::Left];
+    pub fn name(self) -> &'static str {
+        match self {
+            Position::Right => "Right (next to the clock)",
+            Position::Left => "Left",
+        }
+    }
+}
+
+/// The Widgets (weather) button on Windows 11 takes about this much at the left of a centred taskbar.
+const WIDGETS_DIP: i32 = 160;
 
 /// Secondary taskbars have no tray window; their clock and notification bell take about this
 /// much on the right (measured on Windows 11 at 100%).
@@ -109,10 +138,58 @@ pub fn taskbar_for(monitor: &Monitor) -> Option<Taskbar> {
     } else {
         rect.right - SECONDARY_CLOCK_DIP * dpi as i32 / 96
     };
-    Some(Taskbar { hwnd, rect, dpi, free_right })
+    let scale = |dip: i32| dip * dpi as i32 / 96;
+    let left_aligned = explorer_dword("TaskbarAl").unwrap_or(1) == 0;
+    let widgets = primary && explorer_dword("TaskbarDa").unwrap_or(1) != 0 && !left_aligned;
+    let free_left = rect.left + if widgets { scale(WIDGETS_DIP) } else { 0 };
+    // SAFETY: as above. The Start button is a (hidden) legacy child whose rect still tracks
+    // the real button, so it marks where centred icons begin.
+    let icons_left = unsafe { FindWindowExW(hwnd, None, w!("Start"), PCWSTR::null()) }.ok().and_then(|s| {
+        let mut r = RECT::default();
+        (unsafe { GetWindowRect(s, &mut r) }.is_ok() && r.right > r.left).then_some(r.left)
+    });
+    Some(Taskbar { hwnd, rect, dpi, free_right, free_left, icons_left, left_aligned })
+}
+
+fn explorer_dword(name: &str) -> Option<u32> {
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+    let (mut value, mut size) = (0u32, 4u32);
+    // SAFETY: DWORD out-buffer of the declared size.
+    unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"),
+            PCWSTR(wide.as_ptr()),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut u32 as *mut _),
+            Some(&mut size),
+        )
+        .ok()
+        .ok()?;
+    }
+    Some(value)
 }
 
 impl Taskbar {
+    /// Screen x for a strip `width` px wide, and why it isn't where asked (if it had to move).
+    pub fn place(&self, width: i32, pos: Position, offset: i32) -> (i32, Option<&'static str>) {
+        let margin = 8 * self.dpi as i32 / 96;
+        let right = (self.free_right - margin - width - offset).max(self.rect.left);
+        if pos == Position::Right {
+            return (right, None);
+        }
+        if self.left_aligned {
+            return (right, Some("taskbar icons are left-aligned, so there is no room on the left"));
+        }
+        let x = self.free_left + margin + offset;
+        match self.icons_left {
+            Some(limit) if x + width > limit - margin => (right, Some("not enough room left of the taskbar icons")),
+            _ => (x, None),
+        }
+    }
+
     /// Hidden (auto-hide slid away, full-screen app, Explorer gone).
     pub fn is_shown(&self, monitor: &Monitor) -> bool {
         // SAFETY: plain query.

@@ -21,7 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::items::Item;
 use crate::render::{Look, StripPainter};
-use crate::taskbar::{self, Monitor, Taskbar};
+use crate::taskbar::{self, Monitor, Position, Taskbar};
 
 pub const CLASS: PCWSTR = w!("BatteriesBarStrip");
 
@@ -91,7 +91,7 @@ impl Strip {
     }
 
     /// Repaint (if anything changed) and re-place. Cheap enough to call every couple of seconds.
-    pub fn update(&mut self, items: &[Item], dark: bool, text_pt: f32, compact: bool) -> Result<()> {
+    pub fn update(&mut self, items: &[Item], dark: bool, text_pt: f32, compact: bool, pos: Position, offset: i32) -> Result<()> {
         if let Some(tb) = taskbar::taskbar_for(&self.monitor) {
             self.taskbar = tb;
         }
@@ -110,8 +110,7 @@ impl Strip {
         }
 
         let (w, h) = self.size;
-        let margin = 8 * tb.dpi as i32 / 96;
-        let screen_x = (tb.free_right - margin - w).max(tb.rect.left);
+        let (screen_x, _) = tb.place(w, pos, offset);
         let (x, y) = if self.parented { (screen_x - tb.rect.left, 0) } else { (screen_x, tb.rect.top) };
 
         // SAFETY: our own window; z-order is re-asserted because Explorer re-stacks its children.
