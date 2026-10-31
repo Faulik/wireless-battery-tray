@@ -141,7 +141,7 @@ impl SettingsApp {
         let mut swap: Option<(usize, usize)> = None;
         let mut hovered: Option<usize> = None;
         let n = self.cfg.devices.len();
-        let tags = items::tags(&self.cfg);
+        let tags = items::tags(&self.cfg, &self.readings);
         egui::Grid::new("devices").num_columns(7).striped(true).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label(RichText::new("Show").strong());
             ui.label(RichText::new("Device").strong());
@@ -287,14 +287,14 @@ fn status(readings: &[Reading], id: &str) -> String {
         .iter()
         .filter(|r| r.device_id == id)
         .map(|r| match &r.level {
-            battery_core::Level::Percent(p) if r.connected == Some(false) => format!("{p}% (last)"),
+            battery_core::Level::Percent(p) if r.connected == Some(false) => format!("disconnected (last {p}%)"),
             battery_core::Level::Percent(p) => format!("{p}%"),
             battery_core::Level::Coarse(s) => s.clone(),
-            battery_core::Level::Unavailable(s) => s.clone(),
+            battery_core::Level::Unavailable(s) => format!("disconnected ({s})"),
         })
         .collect();
     if parts.is_empty() {
-        "not found".into()
+        "disconnected".into()
     } else {
         parts.join(", ")
     }
@@ -313,7 +313,7 @@ impl eframe::App for SettingsApp {
 
                 ui.heading("Devices");
                 self.devices(ui);
-                ui.checkbox(&mut self.cfg.show_offline, "Show devices that are off or asleep (as a dim dash)");
+                ui.checkbox(&mut self.cfg.show_offline, "Show disconnected devices (dimmed)");
                 ui.add_space(12.0);
 
                 ui.heading("Display");

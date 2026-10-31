@@ -29,7 +29,7 @@ pub struct Item {
 }
 
 pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
-    let tags = tags(cfg);
+    let tags = tags(cfg, readings);
     let mut out = Vec::new();
     for (dev, tag) in cfg.devices.iter().zip(tags).filter(|(d, _)| d.show) {
         let label = label(dev);
@@ -61,6 +61,9 @@ pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
                 None => label.clone(),
             };
             let stale = r.connected == Some(false);
+            if stale && !cfg.show_offline {
+                continue;
+            }
             let charging = if r.charging == Some(true) { "⚡" } else { "" };
             let full_name = match &r.part {
                 Some(p) => format!("{} ({p})", r.name),
@@ -78,6 +81,8 @@ pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
                     let state = if stale { format!("{p}% (last known)") } else { format!("{p}%") };
                     (format!("{charging}{p}%"), style, state)
                 }
+                // Charging with no level reported (MX Master 3): just the bolt.
+                Level::Coarse(s) if s == "charging" && r.charging == Some(true) => ("⚡".into(), Style::Normal, "charging (no level reported)".into()),
                 Level::Coarse(s) => (format!("{charging}{s}"), Style::Normal, s.clone()),
                 Level::Unavailable(why) => {
                     if !cfg.show_offline {
@@ -103,13 +108,13 @@ pub struct Tag {
 
 /// Per device (in config order): the tag shown next to its icon, if any.
 /// Auto mode tags a device only when another shown device uses the same icon.
-pub fn tags(cfg: &Config) -> Vec<Option<Tag>> {
-    let iconic = |d: &DeviceConfig| d.show && d.display != Display::Label;
+pub fn tags(cfg: &Config, readings: &[Reading]) -> Vec<Option<Tag>> {
+    let iconic = |d: &DeviceConfig| on_strip(cfg, d, readings) && d.display != Display::Label;
     let wanted: Vec<bool> = cfg
         .devices
         .iter()
         .map(|d| match d.display {
-            Display::IconLabel => d.show,
+            Display::IconLabel => on_strip(cfg, d, readings),
             Display::Auto => iconic(d) && cfg.devices.iter().filter(|o| iconic(o) && o.icon() == d.icon()).count() > 1,
             Display::Icon | Display::Label => false,
         })
@@ -127,6 +132,17 @@ pub fn tags(cfg: &Config) -> Vec<Option<Tag>> {
             Some(Tag { text, clashed })
         })
         .collect()
+}
+
+/// Whether a device currently appears on the strip (disconnected devices are left out unless
+/// "show disconnected" is on).
+pub fn on_strip(cfg: &Config, dev: &DeviceConfig, readings: &[Reading]) -> bool {
+    dev.show && (cfg.show_offline || readings.iter().any(|r| r.device_id == dev.id && is_live(r)))
+}
+
+/// A reading from a device that is connected right now.
+pub fn is_live(r: &Reading) -> bool {
+    r.connected != Some(false) && !matches!(r.level, Level::Unavailable(_))
 }
 
 /// Last two characters of the id (MAC/serial tail), to tell identical models apart.
@@ -224,7 +240,7 @@ mod tests {
         }
         cfg.devices[1].label = Some("bee".into());
         let items = build(&cfg, &rs);
-        assert_eq!(items.iter().map(|i| (i.text.as_str(), i.style)).collect::<Vec<_>>(), [("A 10%", Style::Low), ("bee 80%", Style::Dim)]);
+        assert_eq!(items.iter().map(|i| (i.text.as_str(), i.style)).collect::<Vec<_>>(), [("A 10%", Style::Low)]);
         cfg.show_offline = true;
         cfg.devices[0].show = false;
         let items = build(&cfg, &rs);
@@ -237,19 +253,28 @@ mod tests {
         let mut rs = vec![
             reading("Logitech K580", Level::Percent(50), Some(true)),
             reading("Mouse M1", Level::Percent(60), Some(true)),
-            reading("Glove80", Level::Unavailable("asleep".into()), Some(false)),
+            reading("Glove80", Level::Percent(70), Some(true)),
         ];
         rs[0].kind = Kind::Keyboard;
         rs[2].kind = Kind::Keyboard;
         cfg.remember(&rs);
-        let t: Vec<Option<String>> = tags(&cfg).into_iter().map(|t| t.map(|t| t.text)).collect();
+        let t: Vec<Option<String>> = tags(&cfg, &rs).into_iter().map(|t| t.map(|t| t.text)).collect();
         assert_eq!(t, [Some("K580".into()), None, Some("Glove80".into())]);
         let items = build(&cfg, &rs);
         assert_eq!((items[0].icon, items[0].tag.as_deref(), items[0].text.as_str()), (Some('\u{E765}'), Some("K580"), "50%"));
         assert_eq!(items[1].tag, None);
-        // Only one keyboard left with an icon: no tag needed.
-        cfg.devices[2].display = Display::Label;
-        assert_eq!(tags(&cfg)[0], None);
+        // Glove80 disconnects: it leaves the strip, so the K580 no longer needs a tag.
+        rs[2].connected = Some(false);
+        assert_eq!(tags(&cfg, &rs)[0], None);
+        assert_eq!(build(&cfg, &rs).len(), 2);
+    }
+
+    #[test]
+    fn charging_without_level_shows_just_the_bolt() {
+        let cfg_rs = vec![Reading { charging: Some(true), ..reading("MX", Level::Coarse("charging".into()), Some(true)) }];
+        let mut cfg = Config::default();
+        cfg.remember(&cfg_rs);
+        assert_eq!(build(&cfg, &cfg_rs)[0].text, "⚡");
     }
 
     #[test]
@@ -259,7 +284,7 @@ mod tests {
         rs[0].device_id = "logi:0badf00d".into();
         rs[1].device_id = "logi:12345678".into();
         cfg.remember(&rs);
-        let t: Vec<Tag> = tags(&cfg).into_iter().flatten().collect();
+        let t: Vec<Tag> = tags(&cfg, &rs).into_iter().flatten().collect();
         assert_eq!(t.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), ["MX·0D", "MX·78"]);
         assert!(t.iter().all(|t| t.clashed));
     }
