@@ -66,7 +66,12 @@ enum Reply {
 
 impl Receiver {
     fn poll_device(&self, pid: u16, index: u8) -> Result<Option<Battery>> {
-        let device_id = format!("logi:{pid:04x}:{index}");
+        // The receiver keeps each paired device's serial (register 0x2B5, sub 0x30+n), readable even
+        // while the device sleeps, so the id survives re-pairing to another slot.
+        let device_id = match self.read_long_register(0xB5, 0x30 + index - 1)? {
+            Some(r) if r[5..9] != [0; 4] => format!("logi:{:02x}{:02x}{:02x}{:02x}", r[5], r[6], r[7], r[8]),
+            _ => format!("logi:{pid:04x}:{index}"),
+        };
         match self.request(index, 0, 1, &[0, 0, 0xAA])? {
             Reply::Ok(_) => {}
             // Paired but unreachable (asleep/off) still has a name in the receiver's pairing register.

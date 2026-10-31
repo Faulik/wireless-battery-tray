@@ -65,7 +65,7 @@ impl Provider for KeychronProvider {
                     }
                 };
                 out.push(Battery {
-                    device_id: format!("keychron:{:04x}:{pid:04x}", info.product_id()),
+                    device_id: format!("{}:{slot}", crate::stable_id("keychron", pid, info.serial_number())),
                     name: model_name(pid).map_or_else(|| format!("Keychron {VID:04X}:{pid:04X}"), String::from),
                     part: None,
                     kind: if slot == 2 { Kind::Mouse } else { Kind::Keyboard },

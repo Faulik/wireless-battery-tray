@@ -35,6 +35,84 @@ pub struct DeviceConfig {
     pub label: Option<String>,
     #[serde(default = "yes")]
     pub show: bool,
+    #[serde(default)]
+    pub display: Display,
+    /// Icon override; `None` = from the device kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
+}
+
+/// How a device appears in the strip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Display {
+    #[default]
+    Icon,
+    Label,
+    IconLabel,
+}
+
+impl Display {
+    pub const ALL: [Display; 3] = [Display::Icon, Display::Label, Display::IconLabel];
+    pub fn name(self) -> &'static str {
+        match self {
+            Display::Icon => "Icon",
+            Display::Label => "Label",
+            Display::IconLabel => "Icon + label",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Icon {
+    Keyboard,
+    Mouse,
+    Headset,
+    Headphones,
+    Gamepad,
+    Other,
+}
+
+impl Icon {
+    pub const ALL: [Icon; 6] = [Icon::Keyboard, Icon::Mouse, Icon::Headset, Icon::Headphones, Icon::Gamepad, Icon::Other];
+
+    pub fn from_kind(kind: Kind) -> Self {
+        match kind {
+            Kind::Keyboard => Icon::Keyboard,
+            Kind::Mouse => Icon::Mouse,
+            Kind::Headset => Icon::Headset,
+            Kind::Gamepad => Icon::Gamepad,
+            Kind::Other => Icon::Other,
+        }
+    }
+
+    /// Code point in Segoe Fluent Icons (Windows 11) / Segoe MDL2 Assets (Windows 10); same in both.
+    pub fn glyph(self) -> char {
+        match self {
+            Icon::Keyboard => '\u{E765}',
+            Icon::Mouse => '\u{E962}',
+            Icon::Headset => '\u{E95B}',
+            Icon::Headphones => '\u{E7F6}',
+            Icon::Gamepad => '\u{E7FC}',
+            Icon::Other => '\u{E83F}',
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Icon::Keyboard => "Keyboard",
+            Icon::Mouse => "Mouse",
+            Icon::Headset => "Headset",
+            Icon::Headphones => "Headphones",
+            Icon::Gamepad => "Gamepad",
+            Icon::Other => "Other",
+        }
+    }
+}
+
+impl DeviceConfig {
+    pub fn icon(&self) -> Icon {
+        self.icon.unwrap_or(Icon::from_kind(self.kind))
+    }
 }
 
 fn yes() -> bool {
@@ -99,6 +177,8 @@ impl Config {
                         kind: r.kind,
                         label: None,
                         show: true,
+                        display: Display::default(),
+                        icon: None,
                     });
                     changed = true;
                 }

@@ -64,7 +64,11 @@ impl Provider for DualShockProvider {
                 None => (Level::Unavailable("no input report".into()), None, None),
             };
             out.push(Battery {
-                device_id: format!("ds4:{:04x}:{n}", info.product_id()),
+                // Over Bluetooth the HID serial is the controller's MAC; without one, fall back to order.
+                device_id: match info.serial_number().filter(|s| !s.is_empty()) {
+                    Some(_) => crate::stable_id("ds4", info.product_id(), info.serial_number()),
+                    None => format!("ds4:{:04x}:{n}", info.product_id()),
+                },
                 name: "DualShock 4".into(),
                 part: None,
                 kind: Kind::Gamepad,

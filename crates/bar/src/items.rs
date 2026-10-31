@@ -3,7 +3,7 @@
 
 use battery_core::Level;
 
-use crate::config::{Config, DeviceConfig, Reading};
+use crate::config::{Config, DeviceConfig, Display, Reading};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Style {
@@ -15,6 +15,10 @@ pub enum Style {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Item {
+    /// Icon glyph (Segoe Fluent Icons), when the device is shown with an icon.
+    pub icon: Option<char>,
+    /// Tells apart devices that show the same icon: 1, 2, 3 in settings order.
+    pub badge: Option<u32>,
     pub text: String,
     pub style: Style,
     /// One line for the tooltip.
@@ -22,13 +26,23 @@ pub struct Item {
 }
 
 pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
+    let badges = badges(cfg);
     let mut out = Vec::new();
-    for dev in cfg.devices.iter().filter(|d| d.show) {
+    for (dev, badge) in cfg.devices.iter().zip(badges).filter(|(d, _)| d.show) {
         let label = label(dev);
+        let icon = (dev.display != Display::Label).then(|| dev.icon().glyph());
+        let show_label = dev.display != Display::Icon;
+        let item = |label: &str, value: String, style, detail| Item {
+            icon,
+            badge,
+            text: if show_label { format!("{label} {value}") } else { value },
+            style,
+            detail,
+        };
         let parts: Vec<&Reading> = readings.iter().filter(|r| r.device_id == dev.id).collect();
         if parts.is_empty() {
             if cfg.show_offline {
-                out.push(Item { text: format!("{label} –"), style: Style::Dim, detail: format!("{}: not found", dev.name) });
+                out.push(item(&label, "–".into(), Style::Dim, format!("{}: not found [{}]", dev.name, dev.id)));
             }
             continue;
         }
@@ -43,7 +57,7 @@ pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
                 Some(p) => format!("{} ({p})", r.name),
                 None => r.name.clone(),
             };
-            let (text, style, state) = match &r.level {
+            let (value, style, state) = match &r.level {
                 Level::Percent(p) => {
                     let style = if stale {
                         Style::Dim
@@ -53,23 +67,44 @@ pub fn build(cfg: &Config, readings: &[Reading]) -> Vec<Item> {
                         Style::Normal
                     };
                     let state = if stale { format!("{p}% (last known)") } else { format!("{p}%") };
-                    (format!("{label} {charging}{p}%"), style, state)
+                    (format!("{charging}{p}%"), style, state)
                 }
-                Level::Coarse(s) => (format!("{label} {charging}{s}"), Style::Normal, s.clone()),
+                Level::Coarse(s) => (format!("{charging}{s}"), Style::Normal, s.clone()),
                 Level::Unavailable(why) => {
                     if !cfg.show_offline {
                         continue;
                     }
-                    (format!("{label} –"), Style::Dim, why.clone())
+                    ("–".into(), Style::Dim, why.clone())
                 }
             };
             let charging_note = if r.charging == Some(true) { ", charging" } else { "" };
-            out.push(Item { text, style, detail: format!("{full_name}: {state}{charging_note} [{}]", r.source) });
+            let badge_note = badge.map(|b| format!(" #{b}")).unwrap_or_default();
+            let detail = format!("{full_name}{badge_note}: {state}{charging_note} [{}, {}]", r.source, dev.id);
+            out.push(item(&label, value, style, detail));
         }
     }
     out
 }
 
+/// Per device (in config order): its number among shown icon-only devices with the same icon,
+/// or `None` if that icon is unique. Numbering ignores whether a device is online right now, so
+/// a device's number doesn't change when another one goes to sleep.
+pub fn badges(cfg: &Config) -> Vec<Option<u32>> {
+    let icon_only = |d: &DeviceConfig| d.show && d.display == Display::Icon;
+    let mut seen = std::collections::HashMap::new();
+    cfg.devices
+        .iter()
+        .map(|d| {
+            if !icon_only(d) {
+                return None;
+            }
+            let total = cfg.devices.iter().filter(|o| icon_only(o) && o.icon() == d.icon()).count();
+            let n = seen.entry(d.icon()).or_insert(0u32);
+            *n += 1;
+            (total > 1).then_some(*n)
+        })
+        .collect()
+}
 pub fn label(dev: &DeviceConfig) -> String {
     match &dev.label {
         Some(l) if !l.trim().is_empty() => l.trim().to_string(),
@@ -141,6 +176,9 @@ mod tests {
             reading("C", Level::Unavailable("off".into()), Some(false)),
         ];
         cfg.remember(&rs);
+        for d in &mut cfg.devices {
+            d.display = Display::Label;
+        }
         cfg.devices[1].label = Some("bee".into());
         let items = build(&cfg, &rs);
         assert_eq!(items.iter().map(|i| (i.text.as_str(), i.style)).collect::<Vec<_>>(), [("A 10%", Style::Low), ("bee 80%", Style::Dim)]);
@@ -148,5 +186,27 @@ mod tests {
         cfg.devices[0].show = false;
         let items = build(&cfg, &rs);
         assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["bee 80%", "C –"]);
+    }
+
+    #[test]
+    fn same_icon_gets_numbered() {
+        let mut cfg = Config::default();
+        let mut rs = vec![
+            reading("kb1", Level::Percent(50), Some(true)),
+            reading("mouse", Level::Percent(60), Some(true)),
+            reading("kb2", Level::Unavailable("asleep".into()), Some(false)),
+        ];
+        rs[0].kind = Kind::Keyboard;
+        rs[2].kind = Kind::Keyboard;
+        cfg.remember(&rs);
+        assert_eq!(badges(&cfg), [Some(1), None, Some(2)]);
+        let items = build(&cfg, &rs);
+        assert_eq!(items[0].text, "50%");
+        assert_eq!(items[0].icon, Some('\u{E765}'));
+        // kb2 is asleep and hidden, but kb1 keeps badge 1 and the mouse has none.
+        assert_eq!(items.iter().map(|i| i.badge).collect::<Vec<_>>(), [Some(1), None]);
+        // A label on one of them takes it out of the numbering.
+        cfg.devices[2].display = Display::IconLabel;
+        assert_eq!(badges(&cfg), [None, None, None]);
     }
 }

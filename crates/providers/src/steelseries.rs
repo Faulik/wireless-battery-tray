@@ -11,6 +11,8 @@ use anyhow::Result;
 use battery_core::{Battery, Kind, Level, Provider};
 use hidapi::HidApi;
 
+use crate::stable_id;
+
 const VID: u16 = 0x1038;
 
 /// (pid, name, discrete 0..=4 battery)
@@ -63,7 +65,7 @@ impl Provider for SteelSeriesProvider {
                 parse_status(&data, discrete)
             };
             out.push(Battery {
-                device_id: format!("ss:{VID:04x}:{pid:04x}"),
+                device_id: stable_id("ss", pid, info.serial_number()),
                 name: name.to_string(),
                 part: None,
                 kind: Kind::Headset,

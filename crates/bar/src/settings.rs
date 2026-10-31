@@ -9,7 +9,7 @@ use eframe::egui::{self, Color32, RichText};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
-use crate::config::{load_snapshot, Config, Reading};
+use crate::config::{load_snapshot, Config, Display, Icon, Reading};
 use crate::items::{self, Style};
 use crate::taskbar::{self, Monitor};
 use crate::{autostart, WM_RELOAD};
@@ -18,10 +18,17 @@ pub const TITLE: &str = "Battery bar settings";
 
 pub fn run(notify: Option<isize>) -> Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_title(TITLE).with_inner_size([680.0, 640.0]).with_min_inner_size([440.0, 400.0]),
+        viewport: egui::ViewportBuilder::default().with_title(TITLE).with_inner_size([900.0, 700.0]).with_min_inner_size([440.0, 400.0]),
         ..Default::default()
     };
-    eframe::run_native(TITLE, options, Box::new(move |_cc| Ok(Box::new(SettingsApp::new(notify)))))
+    eframe::run_native(
+        TITLE,
+        options,
+        Box::new(move |cc| {
+            add_icon_font(&cc.egui_ctx);
+            Ok(Box::new(SettingsApp::new(notify)))
+        }),
+    )
         .map_err(|e| anyhow!("settings window: {e}"))
 }
 
@@ -87,12 +94,21 @@ impl SettingsApp {
             ui.set_min_width(ui.available_width());
             let size = self.cfg.text_size * 96.0 / 72.0;
             let text = |i: &items::Item| {
+                let mut s = String::new();
+                if let Some(g) = i.icon {
+                    s.push(g);
+                    if let Some(b) = i.badge {
+                        s.push_str(&b.to_string());
+                    }
+                    s.push(' ');
+                }
+                s.push_str(&i.text);
                 let color = match i.style {
                     Style::Normal => fg,
                     Style::Low => if self.dark { Color32::from_rgb(255, 107, 107) } else { Color32::from_rgb(196, 43, 28) },
                     Style::Dim => fg.gamma_multiply(0.5),
                 };
-                RichText::new(&i.text).color(color).size(if self.cfg.compact { size * 0.85 } else { size })
+                RichText::new(s).color(color).size(if self.cfg.compact { size * 0.85 } else { size })
             };
             if items.is_empty() {
                 ui.label(RichText::new("(nothing to show)").color(fg.gamma_multiply(0.5)));
@@ -121,9 +137,12 @@ impl SettingsApp {
     fn devices(&mut self, ui: &mut egui::Ui) {
         let mut swap: Option<(usize, usize)> = None;
         let n = self.cfg.devices.len();
-        egui::Grid::new("devices").num_columns(5).striped(true).spacing([10.0, 6.0]).show(ui, |ui| {
+        let badges = items::badges(&self.cfg);
+        egui::Grid::new("devices").num_columns(7).striped(true).spacing([10.0, 6.0]).show(ui, |ui| {
             ui.label(RichText::new("Show").strong());
             ui.label(RichText::new("Device").strong());
+            ui.label(RichText::new("Show as").strong());
+            ui.label(RichText::new("Icon").strong());
             ui.label(RichText::new("Label").strong());
             ui.label(RichText::new("Now").strong());
             ui.label("");
@@ -131,7 +150,29 @@ impl SettingsApp {
             for i in 0..n {
                 let d = &mut self.cfg.devices[i];
                 ui.checkbox(&mut d.show, "");
-                ui.label(&d.name).on_hover_text(format!("{:?} · {}", d.kind, d.id));
+                ui.vertical(|ui| {
+                    ui.set_min_width(210.0);
+                    let badge = badges[i].map(|b| format!("  #{b}")).unwrap_or_default();
+                    ui.add(egui::Label::new(format!("{}{badge}", d.name)).extend());
+                    ui.add(egui::Label::new(RichText::new(&d.id).small().weak()).extend());
+                });
+                egui::ComboBox::from_id_salt(("display", i)).width(96.0).selected_text(d.display.name()).show_ui(ui, |ui| {
+                    for opt in Display::ALL {
+                        ui.selectable_value(&mut d.display, opt, opt.name());
+                    }
+                });
+                let current = d.icon();
+                egui::ComboBox::from_id_salt(("icon", i))
+                    .width(40.0)
+                    .selected_text(RichText::new(current.glyph().to_string()).size(16.0))
+                    .show_ui(ui, |ui| {
+                        for opt in Icon::ALL {
+                            let text = RichText::new(format!("{}  {}", opt.glyph(), opt.name()));
+                            if ui.selectable_label(current == opt, text).clicked() {
+                                d.icon = (opt != Icon::from_kind(d.kind)).then_some(opt);
+                            }
+                        }
+                    });
                 let mut label = d.label.clone().unwrap_or_default();
                 let hint = items::auto_label(&d.name);
                 if ui.add(egui::TextEdit::singleline(&mut label).hint_text(hint).desired_width(70.0)).changed() {
@@ -156,6 +197,21 @@ impl SettingsApp {
             ui.label("No devices seen yet. They appear here after the first poll.");
         }
     }
+}
+
+/// Use the same Windows icon font as the strip, as a fallback after egui's text fonts, so the
+/// preview and the icon picker show the real glyphs.
+fn add_icon_font(ctx: &egui::Context) {
+    let windir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into());
+    let Some(bytes) = ["SegoeIcons.ttf", "segmdl2.ttf"].iter().find_map(|f| std::fs::read(format!(r"{windir}\Fonts\{f}")).ok()) else {
+        return;
+    };
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert("segoe-icons".into(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts.families.entry(family).or_default().push("segoe-icons".into());
+    }
+    ctx.set_fonts(fonts);
 }
 
 fn status(readings: &[Reading], id: &str) -> String {

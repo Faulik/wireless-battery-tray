@@ -4,7 +4,7 @@
 //! placement code only needs a memory DC with the finished frame.
 
 use anyhow::Result;
-use windows::core::w;
+use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F};
 use windows::Win32::Graphics::Direct2D::{
@@ -74,11 +74,34 @@ impl D2dPainter {
     }
 
     fn format(&self, px: f32, bold: bool) -> Result<IDWriteTextFormat> {
+        self.format_family(w!("Segoe UI Variable Text"), px, bold)
+    }
+
+    /// Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on Windows 10 (same code points).
+    fn icon_family(&self) -> PCWSTR {
+        let fluent = w!("Segoe Fluent Icons");
+        // SAFETY: lookups on the system font collection.
+        let has_fluent = unsafe {
+            let mut coll = None;
+            self.dwrite.GetSystemFontCollection(&mut coll, false).is_ok()
+                && coll.is_some_and(|c| {
+                    let (mut index, mut exists) = (0u32, Default::default());
+                    c.FindFamilyName(fluent, &mut index, &mut exists).is_ok() && exists.as_bool()
+                })
+        };
+        if has_fluent {
+            fluent
+        } else {
+            w!("Segoe MDL2 Assets")
+        }
+    }
+
+    fn format_family(&self, family: PCWSTR, px: f32, bold: bool) -> Result<IDWriteTextFormat> {
         let weight = if bold { DWRITE_FONT_WEIGHT_SEMI_BOLD } else { DWRITE_FONT_WEIGHT_NORMAL };
         // SAFETY: valid static strings.
         Ok(unsafe {
             self.dwrite.CreateTextFormat(
-                w!("Segoe UI Variable Text"),
+                family,
                 None,
                 weight,
                 DWRITE_FONT_STYLE_NORMAL,
@@ -144,15 +167,34 @@ impl StripPainter for D2dPainter {
         let gap = 12.0 * scale;
         let pad = 6.0 * scale;
 
-        let laid: Vec<_> = items.iter().map(|i| self.layout(&i.text, &format)).collect::<Result<_>>()?;
+        let icon_format = self.format_family(self.icon_family(), px * 1.3, false)?;
+        let badge_format = self.format(px * 0.62, true)?;
+        let icon_gap = 4.0 * scale;
+
+        struct Laid {
+            icon: Option<(IDWriteTextLayout, f32, f32)>,
+            badge: Option<(IDWriteTextLayout, f32, f32)>,
+            text: (IDWriteTextLayout, f32, f32),
+            width: f32,
+        }
+        let laid: Vec<Laid> = items
+            .iter()
+            .map(|i| {
+                let icon = i.icon.map(|g| self.layout(&g.to_string(), &icon_format)).transpose()?;
+                let badge = i.badge.map(|b| self.layout(&b.to_string(), &badge_format)).transpose()?;
+                let text = self.layout(&i.text, &format)?;
+                let lead = icon.as_ref().map_or(0.0, |l| l.1 + icon_gap) + badge.as_ref().map_or(0.0, |l| l.1 + scale);
+                Ok(Laid { width: lead + text.1, icon, badge, text })
+            })
+            .collect::<Result<_>>()?;
         // Column layout: in compact mode items fill top then bottom row, column by column.
         let mut columns: Vec<(f32, Vec<usize>)> = Vec::new();
-        for (i, (_, w, _)) in laid.iter().enumerate() {
+        for (i, l) in laid.iter().enumerate() {
             if i % rows == 0 {
                 columns.push((0.0, Vec::new()));
             }
             let col = columns.last_mut().unwrap();
-            col.0 = col.0.max(*w);
+            col.0 = col.0.max(l.width);
             col.1.push(i);
         }
         let content: f32 = columns.iter().map(|c| c.0).sum::<f32>() + gap * columns.len().saturating_sub(1) as f32;
@@ -166,24 +208,34 @@ impl StripPainter for D2dPainter {
             self.target.BeginDraw();
             // Alpha 1/255 everywhere so the whole strip is hit-testable (hover tooltip) but invisible.
             self.target.Clear(Some(&D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 1.0 / 255.0 }));
-            let mut x = pad;
+            let mut x0 = pad;
             for (col_w, idxs) in &columns {
                 for (row, &i) in idxs.iter().enumerate() {
-                    let (layout, _, h) = &laid[i];
+                    let l = &laid[i];
                     let brush = self.target.CreateSolidColorBrush(&color(items[i].style, look.dark), None)?;
-                    let y = row as f32 * row_h + (row_h - h) / 2.0;
-                    self.target.DrawTextLayout(
-                        D2D_POINT_2F { x: x.round(), y: y.round() },
-                        layout,
-                        &brush,
-                        D2D1_DRAW_TEXT_OPTIONS_NONE,
-                    );
+                    let top = row as f32 * row_h;
+                    let mut x = x0;
+                    let draw = |layout: &IDWriteTextLayout, x: f32, y: f32| {
+                        self.target.DrawTextLayout(D2D_POINT_2F { x: x.round(), y: y.round() }, layout, &brush, D2D1_DRAW_TEXT_OPTIONS_NONE);
+                    };
+                    if let Some((icon, w, h)) = &l.icon {
+                        let iy = top + (row_h - h) / 2.0;
+                        draw(icon, x, iy);
+                        x += w;
+                        if let Some((badge, bw, bh)) = &l.badge {
+                            // Subscript right after the icon (wide glyphs like the keyboard leave no room inside).
+                            draw(badge, x + scale, iy + h - bh * 0.9);
+                            x += bw + scale;
+                        }
+                        x += icon_gap;
+                    }
+                    let (text, _, h) = &l.text;
+                    draw(text, x, top + (row_h - h) / 2.0);
                 }
-                x += col_w + gap;
+                x0 += col_w + gap;
             }
             self.target.EndDraw(None, None)?;
-        }
-        Ok((width, height))
+        }        Ok((width, height))
     }
 
     fn dc(&self) -> HDC {
