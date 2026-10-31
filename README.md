@@ -21,7 +21,10 @@ Set `BATTERIES_DEBUG=1` to see per-provider timing and GATT details on stderr.
 Supported devices and per-device notes: [device-inventory.md](device-inventory.md).
 
 ## Taskbar strip
-```ncargo run --release --bin batteries-bar
-```nShows the batteries on the taskbar of the chosen monitor, left of the tray/clock. Tray icon menu: Settings, Refresh, Show on (monitor), Devices, Start with Windows (off by default), Quit. Double-click the strip or the tray icon for Settings (`batteries-bar --settings`, an egui window in its own process). Config: `%APPDATA%\batteries_app\config.toml`.
+```
+cargo run --release --bin batteries-bar
+```
+
+Shows the batteries on the taskbar of the chosen monitor, left of the tray/clock. Tray icon menu: Settings, Refresh, Show on (monitor), Devices, Start with Windows (off by default), Quit. Double-click the strip or the tray icon for Settings (`batteries-bar --settings`, an egui window in its own process). Config: `%APPDATA%\batteries_app\config.toml`.
 
 Build needs the MSVC Rust toolchain (`rustup default stable-x86_64-pc-windows-msvc`).
