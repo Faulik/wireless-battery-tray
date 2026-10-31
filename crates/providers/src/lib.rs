@@ -14,6 +14,7 @@ pub(crate) use debug;
 
 #[cfg(windows)]
 pub mod gatt;
+pub mod keychron;
 pub mod logitech;
 #[cfg(windows)]
 pub mod pnp;
@@ -29,6 +30,7 @@ pub fn all() -> Vec<Box<dyn Provider>> {
     }
     v.push(Box::new(logitech::LogitechProvider));
     v.push(Box::new(steelseries::SteelSeriesProvider));
+    v.push(Box::new(keychron::KeychronProvider));
     v
 }
 
