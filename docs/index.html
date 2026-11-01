@@ -9,7 +9,7 @@
 <meta property="og:title" content="Wireless Battery Tray">
 <meta property="og:description" content="Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows taskbar.">
 <meta property="og:url" content="https://battery.faulcloud.work/">
-<meta property="og:image" content="https://battery.faulcloud.work/screenshot.png">
+<meta property="og:image" content="https://battery.faulcloud.work/hero.png">
 <style>
   :root {
     --bg: #1c1c1c;
@@ -49,32 +49,12 @@
   .btn:hover { filter: brightness(1.1); }
   .hero {
     display: block;
-    width: 100%;
+    max-width: 100%;
     height: auto;
     border-radius: 10px;
     border: 1px solid var(--line);
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
-  }
-  .closeup {
-    background: var(--taskbar);
-    border-top: 1px solid #3a3a3a;
-    border-radius: 8px;
-    padding: 14px 20px;
-    margin: 24px 0 64px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-    color: var(--muted);
-    font-size: 0.95rem;
-  }
-  .closeup img {
-    width: 548px;
-    max-width: 100%;
-    height: auto;
-    image-rendering: pixelated;
-    display: block;
+    margin-bottom: 64px;
   }
   h2 { font-size: 1.35rem; margin: 48px 0 16px; }
   ul.features { padding: 0; margin: 0; list-style: none; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
@@ -98,11 +78,7 @@
     <a class="btn" href="https://github.com/Faulik/wireless-battery-tray">View on GitHub</a>
   </div>
 
-  <img class="hero" src="screenshot.png" alt="A Windows desktop with the strip on the left of the taskbar: earbuds 80%, mouse 100%, headset charging at 100%" width="1088" height="386">
-  <div class="closeup">
-    <span>Up close, at 2×:</span>
-    <img src="strip.png" alt="The strip: earbuds 80%, mouse 100%, headset charging at 75%" width="274" height="52">
-  </div>
+  <img class="hero" src="hero.png" alt="The strip on the left of the Windows taskbar: earbuds 80%, mouse 100%, headset charging at 100%" width="838" height="220">
 
   <h2>What it does</h2>
   <ul class="features">
