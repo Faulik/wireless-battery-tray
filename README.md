@@ -6,6 +6,11 @@
 Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows
 taskbar of the monitor you choose.
 
+Works with Bluetooth headphones and earbuds, BLE keyboards and mice (including both halves of ZMK
+split keyboards such as the Glove80), Logitech mice and keyboards on Unifying, Bolt and Lightspeed
+receivers, SteelSeries Arctis Nova 7 headsets and the Sony DualShock 4 controller. Free and open
+source, for Windows 10 and 11.
+
 <p align="center"><img src="docs/hero.png" width="838" alt="The strip on the left of the Windows taskbar: earbuds 80%, mouse 100%, headset charging at 100%"></p>
 
 **[Website](https://battery.faulcloud.work/)** ·

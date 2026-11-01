@@ -3,13 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wireless Battery Tray</title>
-<meta name="description" content="Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows taskbar.">
+<title>Wireless Battery Tray: keyboard, mouse and headset battery on the Windows taskbar</title>
+<meta name="description" content="Free, open-source Windows app that shows the battery level of your wireless keyboard, mouse, headset, earbuds and controller on the taskbar of any monitor. Supports Bluetooth, BLE, Logitech, SteelSeries and DualShock 4.">
+<meta name="keywords" content="Windows taskbar battery, Bluetooth battery level, wireless mouse battery, keyboard battery, headset battery, Logitech battery, SteelSeries Arctis battery, DualShock 4 battery, BLE battery, ZMK split keyboard battery, Windows 11">
+<meta name="author" content="Faulik">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#1c1c1c">
 <link rel="canonical" href="https://battery.faulcloud.work/">
-<meta property="og:title" content="Wireless Battery Tray">
-<meta property="og:description" content="Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows taskbar.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate" type="text/plain" title="LLM summary" href="https://battery.faulcloud.work/llms.txt">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Wireless Battery Tray">
+<meta property="og:title" content="Wireless Battery Tray: device batteries on the Windows taskbar">
+<meta property="og:description" content="Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows taskbar of the monitor you choose. Free and open source.">
 <meta property="og:url" content="https://battery.faulcloud.work/">
 <meta property="og:image" content="https://battery.faulcloud.work/hero.png">
+<meta property="og:image:width" content="838">
+<meta property="og:image:height" content="220">
+<meta property="og:image:alt" content="The battery strip on the Windows taskbar: earbuds 80%, mouse 100%, headset charging">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Wireless Battery Tray: device batteries on the Windows taskbar">
+<meta name="twitter:description" content="Battery levels of your wireless keyboards, mice, headsets and controllers, right on the Windows taskbar. Free and open source.">
+<meta name="twitter:image" content="https://battery.faulcloud.work/hero.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Wireless Battery Tray",
+  "description": "Shows the battery level of wireless keyboards, mice, headsets, earbuds and game controllers on the Windows taskbar of any monitor.",
+  "url": "https://battery.faulcloud.work/",
+  "downloadUrl": "https://github.com/Faulik/wireless-battery-tray/releases/latest",
+  "installUrl": "https://github.com/Faulik/wireless-battery-tray/releases/latest",
+  "screenshot": "https://battery.faulcloud.work/hero.png",
+  "applicationCategory": "UtilitiesApplication",
+  "operatingSystem": "Windows 10, Windows 11",
+  "processorRequirements": "x64",
+  "isAccessibleForFree": true,
+  "license": "https://opensource.org/licenses/MIT",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": { "@type": "Person", "name": "Faulik", "url": "https://github.com/Faulik" },
+  "sameAs": ["https://github.com/Faulik/wireless-battery-tray"],
+  "featureList": [
+    "Battery percentage per device inside the Windows taskbar",
+    "Choose the monitor and left or right side of the taskbar",
+    "Charging indicator and low-battery warning colour",
+    "Bluetooth classic, Bluetooth LE (including split keyboards such as ZMK), Logitech Unifying/Bolt/Lightspeed, SteelSeries Arctis Nova 7 and Sony DualShock 4",
+    "Read-only: only ever queries devices",
+    "Optional, verified one-click updates"
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I see my Bluetooth headphones' or mouse's battery on the Windows taskbar?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Install Wireless Battery Tray. It puts a small strip inside the Windows 10/11 taskbar with an icon and percentage for every connected wireless keyboard, mouse, headset, earbuds and controller." }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it show Logitech mouse and keyboard battery without Logi Options+?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. It reads Logitech devices on Unifying, Bolt and Lightspeed receivers over HID++ 2.0, with or without Logi Options+ running, including charging state." }
+    },
+    {
+      "@type": "Question",
+      "name": "Can it show both halves of a split keyboard like the Glove80 or other ZMK boards?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes, it reads every BLE battery characteristic. ZMK split keyboards show both halves when the firmware is built with CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is Wireless Battery Tray free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. It is free and open source under the MIT license." }
+    }
+  ]
+}
+</script>
 <style>
   :root {
     --bg: #1c1c1c;
@@ -60,6 +131,9 @@
   ul.features { padding: 0; margin: 0; list-style: none; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
   ul.features li { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; color: var(--muted); }
   ul.features b { color: var(--text); display: block; }
+  dl.faq dt { font-weight: 600; margin-top: 16px; }
+  dl.faq dd { margin: 4px 0 0; color: var(--muted); }
+  code { overflow-wrap: anywhere; }
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -104,6 +178,18 @@
       </tbody>
     </table>
   </div>
+
+  <h2>Questions</h2>
+  <dl class="faq">
+    <dt>How do I see my Bluetooth headphones' or mouse's battery on the Windows taskbar?</dt>
+    <dd>Run Wireless Battery Tray. It adds a small strip inside the Windows 10/11 taskbar with an icon and percentage for every connected wireless keyboard, mouse, headset, earbuds and controller.</dd>
+    <dt>Does it show Logitech battery without Logi Options+?</dt>
+    <dd>Yes. Logitech devices on Unifying, Bolt and Lightspeed receivers are read over HID++ 2.0, with or without Logi Options+, including the charging state.</dd>
+    <dt>Can it show both halves of a split keyboard like the Glove80?</dt>
+    <dd>Yes, every BLE battery value is shown. ZMK split keyboards show both halves when the firmware is built with <code>CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y</code>.</dd>
+    <dt>Is it free?</dt>
+    <dd>Yes, free and open source under the MIT license.</dd>
+  </dl>
 
   <footer>
     Windows 10/11, x64. Free and open source under the MIT license ·
