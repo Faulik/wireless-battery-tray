@@ -13,6 +13,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Fails if any commit in the history credits an AI assistant (author, committer, trailers or
+  # message). A red CI also stops the automatic release.
+  attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No AI attribution in commits
+        run: |
+          bad=$(git log --format='%H%x09%an <%ae>%x09%cn <%ce>%x09%B' HEAD \
+            | grep -i -E 'claude|anthropic' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Commits must not mention Claude or Anthropic (author, committer or message):"
+            echo "$bad"
+            exit 1
+          fi
+          echo "Clean: $(git rev-list --count HEAD) commits checked."
+
   check:
     runs-on: windows-latest
     steps:
