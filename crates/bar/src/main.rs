@@ -20,7 +20,7 @@ use std::time::Duration;
 use anyhow::Result;
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, SetDefaultDllDirectories, LOAD_LIBRARY_SEARCH_SYSTEM32};
 use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX};
@@ -72,6 +72,10 @@ thread_local! {
 }
 
 fn main() {
+    // DLLs loaded at run time (Direct2D's d3d11.dll, for one) come from System32 only, so a
+    // same-named file next to the exe, e.g. in a Downloads folder, is never picked up.
+    // SAFETY: changes this process's DLL search path; takes no pointers.
+    let _ = unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) };
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--settings") {
         let notify = args.iter().position(|a| a == "--notify").and_then(|i| args.get(i + 1)).and_then(|h| h.parse().ok());

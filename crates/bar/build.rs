@@ -7,5 +7,9 @@ fn main() {
         // includes Windows 8+, which child layered windows require.
         embed_manifest(new_manifest("WirelessBatteryTray").dpi_awareness(DpiAwareness::PerMonitorV2)).expect("unable to embed manifest");
     }
+    // Resolve imported DLLs from System32 only, not from whatever folder the exe sits in.
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        println!("cargo:rustc-link-arg-bins=/DEPENDENTLOADFLAG:0x800");
+    }
     println!("cargo:rerun-if-changed=build.rs");
 }
