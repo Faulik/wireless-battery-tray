@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Result};
 use eframe::egui::{self, Color32, RichText};
 use egui_extras::{Column, TableBuilder};
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
+use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindow, PostMessageW};
 
 use crate::config::{load_snapshot, Config, Display, Icon, Reading};
 use crate::items::{self, Style};
@@ -22,8 +23,13 @@ pub const TITLE: &str = "Wireless Battery Tray settings";
 /// size and position the user leaves it at are restored instead.
 const FITTED_KEY: &str = "fitted";
 const ORANGE: Color32 = Color32::from_rgb(230, 160, 40);
+/// How long "Check now" or "Update" may wait for the bar before saying it got no answer.
+const BUSY_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long to wait for the new bar after the old one left during an update.
+const BAR_RETURN_TIMEOUT: Duration = Duration::from_secs(40);
 
 pub fn run(notify: Option<isize>) -> Result<()> {
+    updater::clean_old();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(TITLE)
@@ -107,6 +113,11 @@ struct SettingsApp {
     /// Fit the window height to the content on the first frames (first run only).
     fit: bool,
     frames: u32,
+    /// When the bar we were started from disappeared.
+    bar_gone: Option<Instant>,
+    /// When `update_busy` was first seen set, and whether it ran out of time.
+    busy_since: Option<Instant>,
+    busy_timed_out: bool,
     tab: Tab,
 }
 
@@ -127,6 +138,9 @@ impl SettingsApp {
             update_busy: None,
             fit,
             frames: 0,
+            bar_gone: None,
+            busy_since: None,
+            busy_timed_out: false,
             tab,
         }
     }
@@ -171,6 +185,7 @@ impl SettingsApp {
         });
         let note = match (&self.update_busy, &self.update) {
             (Some(busy), _) => busy.to_string(),
+            (None, _) if self.busy_timed_out => format!("No answer from the bar. Try again, or see {}.", updater::log_path().display()),
             (None, Status { checked: None, .. }) => "Not checked yet.".into(),
             (None, Status { error: Some(e), .. }) => e.clone(),
             (None, Status { newer: Some(r), .. }) => format!("Version {} is available.", r.version),
@@ -190,7 +205,7 @@ impl SettingsApp {
     }
 
     /// Pick up new readings (the bar rewrites the snapshot after every poll) and newly seen devices.
-    fn poll_files(&mut self) {
+    fn poll_files(&mut self, ctx: &egui::Context) {
         if self.refreshed.elapsed() < Duration::from_secs(2) {
             return;
         }
@@ -200,6 +215,19 @@ impl SettingsApp {
         if update != self.update {
             self.update = update;
             self.update_busy = None;
+            self.busy_timed_out = false;
+        }
+        match (self.update_busy, self.busy_since) {
+            (None, _) => self.busy_since = None,
+            (Some(_), None) => {
+                self.busy_since = Some(Instant::now());
+                self.busy_timed_out = false;
+            }
+            (Some(_), Some(since)) if since.elapsed() > BUSY_TIMEOUT => {
+                self.update_busy = None;
+                self.busy_timed_out = true;
+            }
+            (Some(_), Some(_)) => {}
         }
         let disk = Config::load();
         for d in disk.devices {
@@ -207,6 +235,34 @@ impl SettingsApp {
                 self.saved.devices.push(d.clone());
                 self.cfg.devices.push(d);
             }
+        }
+        self.follow_bar(ctx);
+    }
+
+    /// This window belongs to the bar that opened it. If the bar quit, close too. If it was
+    /// replaced by an update, reopen from the new exe, so the window shows the new version and
+    /// stops holding on to the old file.
+    fn follow_bar(&mut self, ctx: &egui::Context) {
+        let Some(h) = self.notify else { return };
+        // SAFETY: only checks whether the handle is still a window.
+        if unsafe { IsWindow(HWND(h as _)) }.as_bool() {
+            return;
+        }
+        let gone = *self.bar_gone.get_or_insert_with(Instant::now);
+        let exe = std::env::current_exe().ok();
+        // SAFETY: plain window lookup.
+        if let Ok(bar) = unsafe { FindWindowW(crate::MSG_CLASS, PCWSTR::null()) } {
+            if let Some(exe) = exe {
+                // After the swap this process's own path may be the parked `.old` file.
+                let _ = std::process::Command::new(exe.with_extension("exe")).args(["--settings", "--notify", &(bar.0 as isize).to_string()]).spawn();
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        // A parked old exe means an update is under way: give the new bar time to come up.
+        let updating = self.update_busy.is_some() || exe.is_some_and(|e| updater::old_path(&e).exists());
+        if !updating || gone.elapsed() > BAR_RETURN_TIMEOUT {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 
@@ -550,7 +606,7 @@ fn status(readings: &[Reading], id: &str) -> String {
 
 impl eframe::App for SettingsApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.poll_files();
+        self.poll_files(ctx);
         ctx.request_repaint_after(Duration::from_secs(2));
 
         let content = egui::CentralPanel::default()

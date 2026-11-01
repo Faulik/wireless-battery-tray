@@ -27,7 +27,7 @@ use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_WIN95_CLASSES, INIT
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassExW,
     RegisterWindowMessageW, SetForegroundWindow, SetTimer, ShowWindow, TranslateMessage, CS_DBLCLKS, MB_ICONWARNING, MB_OK, MSG, SW_RESTORE, WINDOW_EX_STYLE,
-    WM_APP, WM_DISPLAYCHANGE, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
+    WM_APP, WM_CLOSE, WM_DISPLAYCHANGE, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
 use config::{Config, Reading};
@@ -115,9 +115,7 @@ fn run() -> Result<()> {
         if updated.is_some() {
             updater::log("updated: started");
         }
-        if let Ok(exe) = std::env::current_exe() {
-            let _ = std::fs::remove_file(updater::old_path(&exe));
-        }
+        updater::clean_old();
         config::migrate();
         autostart::migrate();
         let _ = InitCommonControlsEx(&INITCOMMONCONTROLSEX { dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32, dwICC: ICC_WIN95_CLASSES });
@@ -278,8 +276,16 @@ impl App {
                 let _ = self.tray.set_tooltip(Some("Wireless Battery Tray: downloading update…"));
                 self.updater.send(updater::Command::Install);
             }
-            // SAFETY: ends the message loop on this thread.
-            Action::Quit => unsafe { PostQuitMessage(0) },
+            Action::Quit => {
+                let title: Vec<u16> = settings::TITLE.encode_utf16().chain(Some(0)).collect();
+                // SAFETY: closes our own settings window, if open, and ends the message loop on this thread.
+                unsafe {
+                    if let Ok(h) = FindWindowW(PCWSTR::null(), PCWSTR(title.as_ptr())) {
+                        let _ = PostMessageW(h, WM_CLOSE, WPARAM(0), LPARAM(0));
+                    }
+                    PostQuitMessage(0)
+                }
+            }
         }
     }
 

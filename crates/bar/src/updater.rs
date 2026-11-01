@@ -156,7 +156,7 @@ fn now() -> u64 {
 }
 
 /// `%LOCALAPPDATA%\wireless-battery-tray\logs\update.log`, trimmed when it gets big.
-fn log_path() -> PathBuf {
+pub fn log_path() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     base.join("wireless-battery-tray").join("logs").join("update.log")
 }
@@ -315,6 +315,25 @@ fn parent(p: &Path) -> &Path {
 /// Where the previous exe is parked during an update; removed on the next start.
 pub fn old_path(exe: &Path) -> PathBuf {
     exe.with_extension("old")
+}
+
+/// Remove the previous exe in the background. An old settings window may still be running from
+/// it for a moment, so keep trying for a while.
+pub fn clean_old() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let old = old_path(&exe);
+    if !old.exists() {
+        return;
+    }
+    let _ = std::thread::Builder::new().name("clean-old".into()).spawn(move || {
+        for _ in 0..30 {
+            if std::fs::remove_file(&old).is_ok() || !old.exists() {
+                return;
+            }
+            std::thread::sleep(Duration::from_secs(1));
+        }
+        log(format!("couldn't remove {}", old.display()));
+    });
 }
 
 pub fn status_path() -> PathBuf {
