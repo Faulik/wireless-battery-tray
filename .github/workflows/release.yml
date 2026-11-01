@@ -1,6 +1,13 @@
 name: Release
 
+# Every merge to main that passes CI and changes more than docs is released as the next patch
+# version (see .github/scripts/plan-release.ps1). Pushing a v* tag or running this by hand
+# releases that tag instead.
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   push:
     tags: ["v*"]
   workflow_dispatch:
@@ -13,29 +20,34 @@ permissions:
   contents: write
   actions: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
 
 jobs:
   release:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: windows-latest
     env:
+      EVENT: ${{ github.event_name }}
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ github.event.workflow_run.head_sha || inputs.tag || github.ref }}
+          fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      # Restores the cache CI saves on main; tag runs don't save their own.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: windows
-          save-if: false
+      - name: Plan
+        id: plan
+        shell: pwsh
+        run: ./.github/scripts/plan-release.ps1
 
       - name: Check CI passed on this commit
+        if: steps.plan.outputs.skip != 'true' && github.event_name != 'workflow_run'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -47,23 +59,32 @@ jobs:
             exit 1
           }
 
-      - name: Check the tag matches the Cargo.toml version
-        id: version
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.plan.outputs.skip != 'true'
+
+      # Restores the cache CI saves on main; release runs don't save their own.
+      - uses: Swatinem/rust-cache@v2
+        if: steps.plan.outputs.skip != 'true'
+        with:
+          shared-key: windows
+          save-if: false
+
+      # Only in this checkout, so the exe reports the released version; nothing is committed.
+      - name: Set version
+        if: steps.plan.outputs.skip != 'true'
         shell: pwsh
         run: |
-          $version = ((cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages | Where-Object name -eq 'wireless-battery-tray').version
-          if ($env:TAG -ne "v$version") {
-            Write-Error "Tag $env:TAG does not match the workspace version $version"
-            exit 1
-          }
-          "version=$version" >> $env:GITHUB_OUTPUT
+          (Get-Content Cargo.toml -Raw) -replace '(?m)^version = "[^"]+"', 'version = "${{ steps.plan.outputs.version }}"' | Set-Content Cargo.toml -NoNewline
 
-      - run: cargo build --release --workspace --locked
+      # Not --locked: a version set above also changes the workspace crates' entries in Cargo.lock.
+      - if: steps.plan.outputs.skip != 'true'
+        run: cargo build --release --workspace
 
       - name: Package
+        if: steps.plan.outputs.skip != 'true'
         shell: pwsh
         run: |
-          $v = '${{ steps.version.outputs.version }}'
+          $v = '${{ steps.plan.outputs.version }}'
           New-Item -ItemType Directory dist, pkg | Out-Null
           Copy-Item target/release/wireless-battery-tray.exe, target/release/wbt.exe, README.md, LICENSE pkg/
           Compress-Archive -Path pkg/* -DestinationPath "dist/wireless-battery-tray-$v-windows-x64.zip"
@@ -73,9 +94,20 @@ jobs:
             Set-Content -Encoding ascii dist/SHA256SUMS.txt
           Get-Content dist/SHA256SUMS.txt
 
+      # Tags pushed with the workflow token don't start another run of this workflow.
+      - name: Tag
+        if: steps.plan.outputs.skip != 'true' && steps.plan.outputs.create_tag == 'true'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a '${{ steps.plan.outputs.tag }}' -m '${{ steps.plan.outputs.tag }}' HEAD
+          git push origin '${{ steps.plan.outputs.tag }}'
+
       - uses: softprops/action-gh-release@v2
+        if: steps.plan.outputs.skip != 'true'
         with:
-          tag_name: ${{ env.TAG }}
-          name: ${{ env.TAG }}
+          tag_name: ${{ steps.plan.outputs.tag }}
+          name: ${{ steps.plan.outputs.tag }}
           generate_release_notes: true
           files: dist/*

@@ -104,9 +104,10 @@ Layout:
 - `crates/cli`: the `wbt` binary.
 - `crates/bar`: the `wireless-battery-tray` strip, tray, settings window and updater.
 
-Releases: bump `version` in the workspace `Cargo.toml`, commit, then push a `vX.Y.Z` tag.
-`.github/workflows/release.yml` tests, builds and publishes it, and fails if the tag doesn't match
-the version.
+Releases are automatic: every push to `main` that passes CI and changes more than docs is
+released as the next patch version (`v0.1.1` → `v0.1.2`). For a minor or major release, set the
+new `version` in the workspace `Cargo.toml`; the higher of the two wins. Pushing a `vX.Y.Z` tag
+that matches `Cargo.toml` still releases that tag. See `.github/workflows/release.yml`.
 </details>
 
 ## Acknowledgements
