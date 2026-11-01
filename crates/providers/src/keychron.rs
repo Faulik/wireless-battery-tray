@@ -59,7 +59,7 @@ impl Provider for KeychronProvider {
                             debug!("keychron: {pid:04x} battery report {:02x?}", &r[..4]);
                             (Level::Percent(r[2].min(100)), Some(true))
                         }
-                        None => (Level::Unavailable("connected, battery not reported".into()), Some(true)),
+                        None => (Level::Unavailable("battery not reported".into()), Some(true)),
                     }
                 };
                 out.push(Battery {
