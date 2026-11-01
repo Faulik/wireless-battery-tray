@@ -25,7 +25,7 @@ use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_R
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_WIN95_CLASSES, INITCOMMONCONTROLSEX};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, MessageBoxW, PostQuitMessage, RegisterClassExW,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, FindWindowW, GetMessageW, KillTimer, MessageBoxW, PostMessageW, PostQuitMessage, RegisterClassExW,
     RegisterWindowMessageW, SetForegroundWindow, SetTimer, ShowWindow, TranslateMessage, CS_DBLCLKS, MB_ICONWARNING, MB_OK, MSG, SW_RESTORE, WINDOW_EX_STYLE,
     WM_APP, WM_DISPLAYCHANGE, WM_LBUTTONDBLCLK, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
@@ -67,6 +67,8 @@ struct App {
 
 thread_local! {
     static APP: RefCell<Option<App>> = const { RefCell::new(None) };
+    /// Our own messages that arrived while App was borrowed; posted again once it's free.
+    static DEFERRED: RefCell<Vec<(HWND, u32, WPARAM, LPARAM)>> = const { RefCell::new(Vec::new()) };
 }
 
 fn main() {
@@ -172,10 +174,22 @@ fn run() -> Result<()> {
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     // Messages sent re-entrantly while App is borrowed (e.g. by SetWindowPos) go to DefWindowProc.
+    // App also stays borrowed while a menu or message box runs its modal loop; our own messages
+    // arriving then (poll results, "update installed, quit") must not be lost, so they wait.
     let handled = APP.with(|a| match a.try_borrow_mut() {
         Ok(mut guard) => guard.as_mut().and_then(|app| app.handle(hwnd, msg, wp, lp)),
+        Err(_) if (WM_APP..0xC000).contains(&msg) => {
+            DEFERRED.with(|d| d.borrow_mut().push((hwnd, msg, wp, lp)));
+            Some(LRESULT(0))
+        }
         Err(_) => None,
     });
+    if APP.with(|a| a.try_borrow_mut().is_ok()) {
+        for (h, m, w, l) in DEFERRED.take() {
+            // SAFETY: posting is safe for any handle value.
+            let _ = unsafe { PostMessageW(h, m, w, l) };
+        }
+    }
     match handled {
         Some(r) => r,
         // SAFETY: default processing for our own windows.
