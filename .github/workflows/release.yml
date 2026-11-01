@@ -11,6 +11,11 @@ on:
 
 permissions:
   contents: write
+  actions: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
 
 jobs:
   release:
@@ -24,7 +29,23 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      # Restores the cache CI saves on main; tag runs don't save their own.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows
+          save-if: false
+
+      - name: Check CI passed on this commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sha = git rev-parse HEAD
+          $runs = gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$sha&status=success" --jq '.total_count'
+          if ([int]$runs -lt 1) {
+            Write-Error "No successful CI run for $sha. Push it to main and wait for CI before tagging."
+            exit 1
+          }
 
       - name: Check the tag matches the Cargo.toml version
         id: version
@@ -36,8 +57,6 @@ jobs:
             exit 1
           }
           "version=$version" >> $env:GITHUB_OUTPUT
-
-      - run: cargo test --workspace --locked
 
       - run: cargo build --release --workspace --locked
 

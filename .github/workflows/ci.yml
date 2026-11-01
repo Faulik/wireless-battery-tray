@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
 jobs:
   check:
     runs-on: windows-latest
@@ -18,10 +22,17 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # Shared with release.yml, so a release starts from main's warm cache.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: cargo fmt --all --check
 
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-      - run: cargo test --workspace --locked
+      # Tests in the release profile reuse the dependencies the release build needs.
+      - run: cargo test --workspace --locked --release
+
+      - run: cargo build --workspace --locked --release
