@@ -95,16 +95,16 @@ fn read_status(dev: &HidDevice, bluetooth: bool) -> Result<Option<[u8; 2]>> {
     Ok(None)
 }
 
-/// Percent (mid-point of each 10% step, as Linux and the PS4 do) and charging state.
-/// `None` percent for the error codes 14/15 on cable.
+/// Percent and charging state. The nibble's range depends on the cable (as DS4Windows does:
+/// 0..=8 on battery, 0..=11 charging with 11 = full), so each is scaled by its own maximum.
+/// `None` percent for the error codes 12..=15 on cable.
 fn parse_status0(s: u8) -> (Option<u8>, Option<bool>) {
     let cap = s & 0x0F;
     if s & 0x10 == 0 {
-        return (Some(if cap < 10 { cap * 10 + 5 } else { 100 }), Some(false));
+        return (Some((u16::from(cap) * 100 / 8).min(100) as u8), Some(false));
     }
     match cap {
-        0..=9 => (Some(cap * 10 + 5), Some(true)),
-        10 => (Some(100), Some(true)),
+        0..=10 => (Some((u16::from(cap) * 100 / 11) as u8), Some(true)),
         11 => (Some(100), Some(false)),
         _ => (None, None),
     }
@@ -118,8 +118,11 @@ mod tests {
     fn status_byte() {
         // Real Bluetooth report from this machine: status0 = 0x02, no cable.
         assert_eq!(parse_status0(0x02), (Some(25), Some(false)));
+        assert_eq!(parse_status0(0x08), (Some(100), Some(false)));
         assert_eq!(parse_status0(0x0A), (Some(100), Some(false)));
-        assert_eq!(parse_status0(0x13), (Some(35), Some(true)));
+        // Real USB report from this machine: status0 = 0x16 while charging.
+        assert_eq!(parse_status0(0x16), (Some(54), Some(true)));
+        assert_eq!(parse_status0(0x1A), (Some(90), Some(true)));
         assert_eq!(parse_status0(0x1B), (Some(100), Some(false)));
         assert_eq!(parse_status0(0x1F), (None, None));
     }
