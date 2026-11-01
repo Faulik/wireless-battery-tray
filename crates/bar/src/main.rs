@@ -87,8 +87,13 @@ fn main() {
 fn run() -> Result<()> {
     // SAFETY: Win32 setup on the UI thread.
     unsafe {
-        // Started by an update: give the old version a few seconds to exit.
-        let updated = std::env::args().any(|a| a == "--updated");
+        // Started by an update: wait for the old version to exit first. Versions up to 0.1.1
+        // pass no pid, so also keep retrying the lock for a while.
+        let args: Vec<String> = std::env::args().collect();
+        let updated = args.iter().position(|a| a == "--updated");
+        if let Some(pid) = updated.and_then(|i| args.get(i + 1)).and_then(|p| p.parse().ok()) {
+            updater::wait_for_old(pid);
+        }
         let mut tries = 0;
         let _mutex = loop {
             let m = CreateMutexW(None, true, w!("Local\\WirelessBatteryTraySingleInstance"))?;
@@ -97,11 +102,17 @@ fn run() -> Result<()> {
             }
             let _ = CloseHandle(m);
             tries += 1;
-            if !updated || tries > 50 {
+            if updated.is_none() || tries > 150 {
+                if updated.is_some() {
+                    updater::log("updated: another copy kept running; giving up");
+                }
                 return Ok(());
             }
             std::thread::sleep(Duration::from_millis(200));
         };
+        if updated.is_some() {
+            updater::log("updated: started");
+        }
         if let Ok(exe) = std::env::current_exe() {
             let _ = std::fs::remove_file(updater::old_path(&exe));
         }
@@ -261,8 +272,11 @@ impl App {
     fn on_updater(&mut self) {
         match self.updater.take_installed() {
             // The new version is running and waiting for us to exit.
-            // SAFETY: ends the message loop on this thread.
-            Some(Ok(())) => unsafe { PostQuitMessage(0) },
+            Some(Ok(())) => {
+                updater::log("quitting for the update");
+                // SAFETY: ends the message loop on this thread.
+                unsafe { PostQuitMessage(0) }
+            }
             Some(Err(e)) => {
                 self.update_tray_tooltip();
                 let text: Vec<u16> = format!("The update could not be installed:\n{e}").encode_utf16().chain(Some(0)).collect();

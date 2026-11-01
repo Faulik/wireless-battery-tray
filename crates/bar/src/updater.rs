@@ -23,6 +23,8 @@ const EXE_ASSET: &str = "wireless-battery-tray.exe";
 const SUMS_ASSET: &str = "SHA256SUMS.txt";
 const FIRST_CHECK: Duration = Duration::from_secs(30);
 const INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+/// How long the old version gets to quit normally after starting the new one.
+const QUIT_GRACE: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Release {
@@ -89,10 +91,21 @@ impl Updater {
                                 None => Err("no update available".into()),
                             };
                             if let Err(e) = &result {
+                                log(format!("install failed: {e}"));
                                 let _ = save_status(&Status { checked: Some(now()), newer, error: Some(format!("Update failed: {e}")) });
                             }
+                            let installed = result.is_ok();
                             shared.lock().unwrap().installed = Some(result);
-                            if !notify() {
+                            let posted = notify();
+                            if installed {
+                                // The new version is waiting for this process to exit. The UI thread
+                                // normally quits on the message above; if it doesn't (e.g. a menu's
+                                // modal loop swallowed it), don't leave the new one waiting.
+                                std::thread::sleep(QUIT_GRACE);
+                                log("still running after the update; exiting");
+                                std::process::exit(0);
+                            }
+                            if !posted {
                                 return;
                             }
                             continue;
@@ -109,6 +122,11 @@ impl Updater {
                         Ok(newer) => Status { checked: Some(now()), newer, error: None },
                         Err(e) => Status { checked: Some(now()), newer: None, error: Some(format!("Couldn't check: {e:#}")) },
                     };
+                    match (&status.newer, &status.error) {
+                        (_, Some(e)) => log(e),
+                        (Some(r), None) => log(format!("check: {} is available", r.version)),
+                        (None, None) => log(format!("check: {CURRENT} is up to date")),
+                    }
                     let _ = save_status(&status);
                     shared.lock().unwrap().newer = status.newer;
                     if !notify() {
@@ -135,6 +153,25 @@ impl Updater {
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// `%LOCALAPPDATA%\wireless-battery-tray\logs\update.log`, trimmed when it gets big.
+fn log_path() -> PathBuf {
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    base.join("wireless-battery-tray").join("logs").join("update.log")
+}
+
+/// Append a line to the update log; never fails the caller.
+pub fn log(msg: impl std::fmt::Display) {
+    use std::io::Write as _;
+    let path = log_path();
+    let _ = std::fs::create_dir_all(parent(&path));
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 256 * 1024) {
+        let _ = std::fs::rename(&path, path.with_extension("log.1"));
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{} [{} pid {}] {msg}", now(), CURRENT, std::process::id());
+    }
 }
 
 fn agent() -> ureq::Agent {
@@ -213,6 +250,7 @@ fn expected_hash(sums: &str, name: &str) -> Option<String> {
 
 /// Download and verify the new exe, swap it in for the running one and start it.
 fn install(r: &Release) -> Result<()> {
+    log(format!("install {}: downloading", r.version));
     let sums = String::from_utf8(download(&r.sums_url, 64 * 1024)?).context("SHA256SUMS.txt")?;
     let want = expected_hash(&sums, EXE_ASSET).ok_or_else(|| anyhow!("{EXE_ASSET} is not listed in {SUMS_ASSET}"))?;
     let exe = download(&r.exe_url, 200 * 1024 * 1024)?;
@@ -236,8 +274,38 @@ fn install(r: &Release) -> Result<()> {
         let _ = std::fs::rename(&old, &current);
         return Err(e.into());
     }
-    std::process::Command::new(&current).arg("--updated").spawn().context("starting the new version")?;
+    log(format!("install {}: verified and swapped in at {}", r.version, current.display()));
+    // The new process waits for this one (by pid) before taking over. Break away from any job
+    // object we were started in, so it doesn't die with us; fall back if the job forbids that.
+    use std::os::windows::process::CommandExt as _;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    let pid = std::process::id().to_string();
+    let spawn = |flags| std::process::Command::new(&current).args(["--updated", &pid]).creation_flags(flags).spawn();
+    let child = spawn(CREATE_BREAKAWAY_FROM_JOB).or_else(|_| spawn(0)).context("starting the new version")?;
+    log(format!("install {}: started pid {}", r.version, child.id()));
     Ok(())
+}
+
+/// In a process started by an update: wait for the old version (`--updated <pid>`) to exit,
+/// and end it if it hangs, so the new one can take over the single-instance lock.
+pub fn wait_for_old(pid: u32) {
+    use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows::Win32::System::Threading::{OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE};
+    // SAFETY: plain process-handle calls on a handle we own and close.
+    unsafe {
+        let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, false, pid) else {
+            log(format!("updated: old pid {pid} already gone"));
+            return;
+        };
+        if WaitForSingleObject(h, 30_000) == WAIT_OBJECT_0 {
+            log(format!("updated: old pid {pid} exited"));
+        } else {
+            log(format!("updated: old pid {pid} still running after 30 s; ending it"));
+            let _ = TerminateProcess(h, 0);
+            let _ = WaitForSingleObject(h, 5_000);
+        }
+        let _ = CloseHandle(h);
+    }
 }
 
 fn parent(p: &Path) -> &Path {
