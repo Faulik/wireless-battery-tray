@@ -149,7 +149,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "battery-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "serde",
@@ -2286,7 +2286,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "providers"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "battery-core",
@@ -3154,7 +3154,7 @@ dependencies = [
 
 [[package]]
 name = "wbt"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "battery-core",
  "providers",
@@ -3531,7 +3531,7 @@ dependencies = [
 
 [[package]]
 name = "wireless-battery-tray"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "battery-core",
