@@ -28,8 +28,8 @@ taskbar of the monitor you choose.
 1. Download `wireless-battery-tray.exe` (or the zip) from
    [Releases](https://github.com/Faulik/wireless-battery-tray/releases/latest).
 2. Put it anywhere, e.g. `%LOCALAPPDATA%\Programs\Wireless Battery Tray\`, and run it.
-3. Windows SmartScreen may warn that the app is unrecognised (it isn't code-signed): choose
-   **More info → Run anyway**.
+3. Windows SmartScreen may warn that the app is unrecognised, especially for a new release that
+   few people have downloaded yet: choose **More info → Run anyway**.
 4. To start it at login, tick **Start with Windows** in the tray menu or Settings.
 
 Windows 10/11, x64. The zip also contains `wbt.exe`, a command-line tool that prints every
@@ -108,6 +108,17 @@ Releases: bump `version` in the workspace `Cargo.toml`, commit, then push a `vX.
 `.github/workflows/release.yml` tests, builds and publishes it, and fails if the tag doesn't match
 the version.
 </details>
+
+## Code signing policy
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/).
+
+- Releases are built and signed only by the [Release workflow](.github/workflows/release.yml) on
+  GitHub-hosted runners, from a tagged commit of this repository.
+- Committers and reviewers: [Faulik](https://github.com/Faulik).
+- Approvers: [Faulik](https://github.com/Faulik). Every signing request is approved by hand.
+- Privacy: the app sends nothing anywhere except the optional update check, which asks GitHub for
+  the latest release (see [Updates](#updates)).
 
 ## Acknowledgements
 Protocol references, with thanks:

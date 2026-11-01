@@ -22,6 +22,8 @@ jobs:
     runs-on: windows-latest
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
+      # Signing runs only once the SignPath token secret exists; until then releases ship unsigned.
+      SIGN: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,6 +61,54 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
 
       - run: cargo build --release --workspace --locked
+
+      # Code signing via SignPath (https://signpath.org). SignPath only signs files built by
+      # this workflow on a GitHub-hosted runner, so the exes go up as a workflow artifact,
+      # come back signed, and replace the unsigned ones before packaging.
+      - name: Upload unsigned exes for signing
+        id: unsigned
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-exes
+          path: |
+            target/release/wireless-battery-tray.exe
+            target/release/wbt.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign with SignPath
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'wireless-battery-tray' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # Release signing needs a manual approval on signpath.io; allow an hour for it.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+
+      - name: Swap in the signed exes and check their signatures
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          foreach ($exe in 'wireless-battery-tray.exe', 'wbt.exe') {
+            $signed = Get-ChildItem signed -Recurse -File -Filter $exe | Select-Object -First 1
+            if (-not $signed) { Write-Error "SignPath did not return $exe"; exit 1 }
+            $sig = Get-AuthenticodeSignature $signed.FullName
+            if ($sig.Status -in 'NotSigned', 'HashMismatch', 'NotSupportedFileFormat') {
+              Write-Error "$exe signature is $($sig.Status): $($sig.StatusMessage)"
+              exit 1
+            }
+            # The test-signing policy uses an untrusted certificate, so only warn on other states.
+            if ($sig.Status -ne 'Valid') { Write-Warning "$exe signature is $($sig.Status): $($sig.StatusMessage)" }
+            Write-Host "$exe signed by $($sig.SignerCertificate.Subject)"
+            Copy-Item $signed.FullName "target/release/$exe" -Force
+          }
 
       - name: Package
         shell: pwsh
