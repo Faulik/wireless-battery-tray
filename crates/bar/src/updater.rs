@@ -346,8 +346,18 @@ fn save_status(s: &Status) -> Result<()> {
     Ok(())
 }
 
+/// The last saved check. A release offered there that isn't newer than this build (the file was
+/// written by the version this one replaced) is dropped, so settings doesn't offer it again.
 pub fn load_status() -> Status {
-    std::fs::read(status_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    let status: Status = std::fs::read(status_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    without_stale(status, CURRENT)
+}
+
+fn without_stale(mut status: Status, current: &str) -> Status {
+    if status.newer.as_ref().is_some_and(|r| !is_newer(&r.version, current)) {
+        status.newer = None;
+    }
+    status
 }
 
 #[cfg(test)]
@@ -363,6 +373,16 @@ mod tests {
         assert!(!is_newer("v0.0.9", "0.1.0"));
         assert!(!is_newer("v0.2.0-rc1", "0.1.0"));
         assert!(!is_newer("nightly", "0.1.0"));
+    }
+
+    #[test]
+    fn drops_release_that_is_already_installed() {
+        let release = |v: &str| Release { version: v.into(), page: String::new(), exe_url: String::new(), sums_url: String::new() };
+        let saved = Status { checked: Some(1), newer: Some(release("0.1.6")), error: None };
+        assert_eq!(without_stale(saved.clone(), "0.1.6").newer, None);
+        assert_eq!(without_stale(saved.clone(), "0.1.7").newer, None);
+        assert_eq!(without_stale(saved.clone(), "0.1.5").newer, Some(release("0.1.6")));
+        assert_eq!(without_stale(saved, "0.1.6").checked, Some(1));
     }
 
     #[test]
