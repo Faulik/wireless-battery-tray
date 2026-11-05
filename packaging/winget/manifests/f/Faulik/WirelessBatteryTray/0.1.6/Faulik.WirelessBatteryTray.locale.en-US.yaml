@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: Faulik.WirelessBatteryTray
+PackageVersion: 0.1.6
+PackageLocale: en-US
+Publisher: Faulik
+PublisherUrl: https://github.com/Faulik
+PublisherSupportUrl: https://github.com/Faulik/wireless-battery-tray/issues
+Author: Faulik
+PackageName: Wireless Battery Tray
+PackageUrl: https://battery.faulcloud.work/
+License: MIT
+LicenseUrl: https://github.com/Faulik/wireless-battery-tray/blob/main/LICENSE
+ShortDescription: Battery levels of wireless keyboards, mice, headsets and controllers on the Windows taskbar.
+Description: |-
+  Shows the battery level of your wireless keyboards, mice, headsets, earbuds and game controllers
+  inside the Windows taskbar, on the monitor you choose. Supports Bluetooth headphones, BLE keyboards
+  and mice (including both halves of ZMK split keyboards), Logitech Unifying, Bolt and Lightspeed
+  receivers, SteelSeries Arctis Nova 7 and the Sony DualShock 4. Includes wbt, a command-line tool
+  that prints every battery once.
+Moniker: wireless-battery-tray
+Tags:
+- battery
+- bluetooth
+- headset
+- keyboard
+- logitech
+- mouse
+- taskbar
+- tray
+- zmk
+ReleaseNotesUrl: https://github.com/Faulik/wireless-battery-tray/releases/tag/v0.1.6
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

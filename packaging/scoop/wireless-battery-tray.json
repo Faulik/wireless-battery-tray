@@ -1,0 +1,30 @@
+{
+    "version": "0.1.6",
+    "description": "Battery levels of wireless keyboards, mice, headsets and controllers on the Windows taskbar.",
+    "homepage": "https://battery.faulcloud.work/",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Faulik/wireless-battery-tray/releases/download/v0.1.6/wireless-battery-tray-0.1.6-windows-x64.zip",
+            "hash": "c9e3d5c69fbd68900e00e79328b36d87a16736345a4234d035bb5a659c4525f4"
+        }
+    },
+    "bin": "wbt.exe",
+    "shortcuts": [
+        [
+            "wireless-battery-tray.exe",
+            "Wireless Battery Tray"
+        ]
+    ],
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Faulik/wireless-battery-tray/releases/download/v$version/wireless-battery-tray-$version-windows-x64.zip"
+            }
+        },
+        "hash": {
+            "url": "$baseurl/SHA256SUMS.txt"
+        }
+    }
+}
