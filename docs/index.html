@@ -11,7 +11,7 @@
 <meta name="theme-color" content="#1c1c1c">
 <link rel="canonical" href="https://battery.faulcloud.work/">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="alternate" type="text/plain" title="LLM summary" href="https://battery.faulcloud.work/llms.txt">
+<link rel="alternate" type="text/markdown" href="/index.md">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Wireless Battery Tray">
 <meta property="og:title" content="Wireless Battery Tray: device batteries on the Windows taskbar">
@@ -61,22 +61,22 @@
     {
       "@type": "Question",
       "name": "How do I see my Bluetooth headphones' or mouse's battery on the Windows taskbar?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Install Wireless Battery Tray. It puts a small strip inside the Windows 10/11 taskbar with an icon and percentage for every connected wireless keyboard, mouse, headset, earbuds and controller." }
+      "acceptedAnswer": { "@type": "Answer", "text": "Run Wireless Battery Tray. It adds a small strip inside the Windows 10/11 taskbar with an icon and percentage for every connected wireless keyboard, mouse, headset, earbuds and controller." }
     },
     {
       "@type": "Question",
-      "name": "Does it show Logitech mouse and keyboard battery without Logi Options+?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. It reads Logitech devices on Unifying, Bolt and Lightspeed receivers over HID++ 2.0, with or without Logi Options+ running, including charging state." }
+      "name": "Does it show Logitech battery without Logi Options+?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes. Logitech devices on Unifying, Bolt and Lightspeed receivers are read over HID++ 2.0, with or without Logi Options+, including the charging state." }
     },
     {
       "@type": "Question",
-      "name": "Can it show both halves of a split keyboard like the Glove80 or other ZMK boards?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes, it reads every BLE battery characteristic. ZMK split keyboards show both halves when the firmware is built with CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y." }
+      "name": "Can it show both halves of a split keyboard like the Glove80?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes, every BLE battery value is shown. ZMK split keyboards show both halves when the firmware is built with CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y." }
     },
     {
       "@type": "Question",
-      "name": "Is Wireless Battery Tray free?",
-      "acceptedAnswer": { "@type": "Answer", "text": "Yes. It is free and open source under the MIT license." }
+      "name": "Is it free?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Yes, free and open source under the MIT license." }
     }
   ]
 }
@@ -99,7 +99,7 @@
     color: var(--text);
     font: 16px/1.6 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   }
-  main { max-width: 880px; margin: 0 auto; padding: 72px 16px 48px; }
+  main { max-width: 880px; margin: 0 auto; padding: 72px 16px 32px; }
   h1 {
     font: 600 clamp(2.2rem, 6vw, 3.4rem)/1.1 "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
     margin: 0 0 16px;
@@ -139,7 +139,9 @@
   th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 600; }
   td.c { text-align: center; }
-  footer { border-top: 1px solid var(--line); margin-top: 64px; padding-top: 24px; color: var(--muted); font-size: 0.9rem; }
+  ol.steps { padding-left: 1.4em; }
+  ol.steps li { margin: 6px 0; }
+  footer { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; }
   a { color: var(--accent); }
 </style>
 </head>
@@ -179,6 +181,23 @@
     </table>
   </div>
 
+  <h2>Install</h2>
+  <ol class="steps">
+    <li>Download <code>wireless-battery-tray.exe</code> (or the zip) from the <a href="https://github.com/Faulik/wireless-battery-tray/releases/latest">latest release</a>.</li>
+    <li>Put it anywhere, for example <code>%LOCALAPPDATA%\Programs\Wireless Battery Tray\</code>, and run it.</li>
+    <li>Windows SmartScreen may warn that the app is unrecognised because it isn't code-signed yet: choose <b>More info</b>, then <b>Run anyway</b>.</li>
+    <li>To start it at login, tick <b>Start with Windows</b> in the tray menu or in Settings.</li>
+  </ol>
+  <p>Requires Windows 10 or 11, x64. The zip also contains <code>wbt.exe</code>, a command-line tool that prints every battery once (<code>wbt --json</code> for JSON). Settings are saved to <code>%APPDATA%\wireless-battery-tray\config.toml</code>.</p>
+
+  <h2>Known limitations</h2>
+  <ul>
+    <li>Keychron keyboards on a Keychron Link receiver report no battery over 2.4 GHz and show as connected only. In Bluetooth mode they report battery normally.</li>
+    <li>The Logitech MX Master 3 reports no level while charging, so only the charging bolt shows until it reports a level again.</li>
+    <li>ZMK split keyboards such as the Glove80 show only the central half unless the firmware is built with <code>CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_PROXY=y</code> and <code>CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING=y</code>.</li>
+    <li>SteelSeries Arctis headsets on older firmware report battery in 25% steps; the DualShock 4 reports in 10% steps.</li>
+  </ul>
+
   <h2>Questions</h2>
   <dl class="faq">
     <dt>How do I see my Bluetooth headphones' or mouse's battery on the Windows taskbar?</dt>
@@ -191,10 +210,13 @@
     <dd>Yes, free and open source under the MIT license.</dd>
   </dl>
 
-  <footer>
-    Windows 10/11, x64. Free and open source under the MIT license ·
-    <a href="https://github.com/Faulik/wireless-battery-tray#readme">Documentation</a>
-  </footer>
 </main>
+<footer>
+  Windows 10/11, x64. Free and open source under the <a href="https://github.com/Faulik/wireless-battery-tray/blob/main/LICENSE">MIT license</a> ·
+  <a href="https://github.com/Faulik/wireless-battery-tray#readme">Documentation</a> ·
+  <a href="https://github.com/Faulik/wireless-battery-tray/releases">Releases</a> ·
+  <a href="/index.md">Markdown version</a> ·
+  <a href="/llms.txt">llms.txt</a>
+</footer>
 </body>
 </html>
