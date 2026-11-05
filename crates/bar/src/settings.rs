@@ -11,7 +11,7 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, IsWindow, PostMessageW};
 
-use crate::config::{load_snapshot, Config, Display, Icon, Reading};
+use crate::config::{load_snapshot, Config, Display, Icon, Reading, POLL_CHOICES};
 use crate::items::{self, Style};
 use crate::taskbar::{self, Monitor, Position};
 use crate::updater::{self, Status};
@@ -509,7 +509,11 @@ impl SettingsApp {
             ui.add(egui::Slider::new(&mut self.cfg.low_threshold, 5..=50).suffix(" %"));
             ui.end_row();
             ui.label("Check batteries every");
-            ui.add(egui::Slider::new(&mut self.cfg.poll_secs, 15..=600).logarithmic(true).suffix(" s"));
+            egui::ComboBox::from_id_salt("poll_secs").selected_text(format!("{} s", self.cfg.poll_secs)).show_ui(ui, |ui| {
+                for secs in POLL_CHOICES {
+                    ui.selectable_value(&mut self.cfg.poll_secs, secs, format!("{secs} s"));
+                }
+            });
             ui.end_row();
             ui.label("Startup");
             let mut auto = self.autostart;

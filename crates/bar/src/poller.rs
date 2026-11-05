@@ -3,7 +3,7 @@
 
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
@@ -31,9 +31,11 @@ impl Poller {
             .name("poller".into())
             .spawn(move || {
                 let providers = providers::all();
-                let mut interval = Duration::from_secs(interval_secs.max(5));
+                let mut interval = Duration::from_secs(interval_secs.max(1));
                 loop {
+                    let started = Instant::now();
                     let snap = battery_core::poll_all(&providers);
+                    let took = started.elapsed();
                     for (p, e) in &snap.errors {
                         eprintln!("poll: {p}: {e}");
                     }
@@ -44,9 +46,12 @@ impl Poller {
                     if unsafe { PostMessageW(HWND(hwnd as _), msg, WPARAM(0), LPARAM(0)) }.is_err() {
                         return;
                     }
-                    match rx.recv_timeout(interval) {
+                    // Rest at least as long as the poll took, so a slow round (sleeping devices,
+                    // BLE timeouts) at a short interval leaves the devices idle half the time
+                    // instead of being queried back to back.
+                    match rx.recv_timeout(interval.max(took)) {
                         Ok(Command::RefreshNow) | Err(RecvTimeoutError::Timeout) => {}
-                        Ok(Command::SetInterval(s)) => interval = Duration::from_secs(s.max(5)),
+                        Ok(Command::SetInterval(s)) => interval = Duration::from_secs(s.max(1)),
                         Err(RecvTimeoutError::Disconnected) => return,
                     }
                 }
