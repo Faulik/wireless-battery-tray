@@ -32,6 +32,9 @@ jobs:
   release:
     if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: windows-latest
+    outputs:
+      skip: ${{ steps.plan.outputs.skip }}
+      tag: ${{ steps.plan.outputs.tag }}
     env:
       EVENT: ${{ github.event_name }}
       TAG: ${{ inputs.tag || github.ref_name }}
@@ -111,3 +114,17 @@ jobs:
           name: ${{ steps.plan.outputs.tag }}
           generate_release_notes: true
           files: dist/*
+
+  # Opens the winget-pkgs PR for each new release. Off until the first version is in winget-pkgs
+  # and a fork plus token exist; see packaging/README.md.
+  winget:
+    needs: release
+    if: needs.release.outputs.skip != 'true' && vars.WINGET_AUTOSUBMIT == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: Faulik.WirelessBatteryTray
+          release-tag: ${{ needs.release.outputs.tag }}
+          installers-regex: '-windows-x64\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}

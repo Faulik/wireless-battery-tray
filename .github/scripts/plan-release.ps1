@@ -3,7 +3,7 @@
 #
 # Merge to main (EVENT=workflow_run): next patch after the latest v* tag, or the Cargo.toml
 # version if that's higher (bump it there for a minor/major release). Skipped when nothing but
-# docs, markdown, LICENSE or .github changed since that tag, or when HEAD is already tagged.
+# docs, markdown, LICENSE, packaging or .github changed since that tag, or when HEAD is already tagged.
 # Tag push / manual run (EVENT=push|workflow_dispatch): release TAG as is; it must match Cargo.toml.
 
 $ErrorActionPreference = 'Stop'
@@ -37,7 +37,7 @@ if ($LASTEXITCODE -ne 0) { $last = $null }
 $next = [version]$cargo
 if ($last) {
     $changed = @(git diff --name-only "$last..HEAD")
-    $relevant = @($changed | Where-Object { $_ -notmatch '^(docs/|\.github/)|\.md$|^LICENSE$' })
+    $relevant = @($changed | Where-Object { $_ -notmatch '^(docs/|\.github/|packaging/)|\.md$|^LICENSE$' })
     if ($relevant.Count -eq 0) {
         Write-Host "Only docs/CI changed since $last; no release."
         Out-Plan @{ skip = 'true' }
