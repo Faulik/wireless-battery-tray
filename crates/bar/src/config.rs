@@ -284,6 +284,10 @@ mod tests {
     fn round_trips_and_defaults_missing_fields() {
         let cfg: Config = toml::from_str("poll_secs = 30\n[[devices]]\nid = \"x\"\nname = \"X\"\nkind = \"Mouse\"\n").unwrap();
         assert_eq!(cfg.poll_secs, 30);
+        assert_eq!(cfg.low_threshold, 20);
+        assert!(cfg.devices[0].show);
+        let again: Config = toml::from_str(&toml::to_string_pretty(&cfg).unwrap()).unwrap();
+        assert_eq!(again, cfg);
     }
 
     #[test]
@@ -293,9 +297,5 @@ mod tests {
         assert_eq!(nearest_poll_secs(4), 3);
         assert_eq!(nearest_poll_secs(7), 5);
         assert_eq!(nearest_poll_secs(10), 10);
-        assert_eq!(cfg.low_threshold, 20);
-        assert!(cfg.devices[0].show);
-        let again: Config = toml::from_str(&toml::to_string_pretty(&cfg).unwrap()).unwrap();
-        assert_eq!(again, cfg);
     }
 }
