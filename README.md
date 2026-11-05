@@ -78,7 +78,7 @@ also edit the file while the app isn't running:
 | `text_size` | `9.0` | Text size in points |
 | `compact` | `false` | Two rows instead of one |
 | `low_threshold` | `20` | Percent below which a level turns red |
-| `poll_secs` | `60` | Seconds between battery reads |
+| `poll_secs` | `10` | Seconds between battery reads: 1, 3, 5, 10 or 30 |
 | `show_offline` | `false` | Show disconnected devices dimmed |
 | `check_updates` | `true` | Check GitHub for new releases |
 | `[[devices]]` | | One entry per device seen: `show`, `display`, `label`, `icon` |

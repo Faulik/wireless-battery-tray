@@ -133,6 +133,13 @@ impl DeviceConfig {
     }
 }
 
+/// Intervals offered in Settings. Other values (older configs, hand edits) snap to the nearest.
+pub const POLL_CHOICES: [u64; 5] = [1, 3, 5, 10, 30];
+
+pub fn nearest_poll_secs(secs: u64) -> u64 {
+    POLL_CHOICES.into_iter().min_by_key(|c| c.abs_diff(secs)).unwrap_or(10)
+}
+
 fn yes() -> bool {
     true
 }
@@ -141,7 +148,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             monitor: None,
-            poll_secs: 60,
+            poll_secs: 10,
             low_threshold: 20,
             text_size: 9.0,
             compact: false,
@@ -178,7 +185,9 @@ impl Config {
 
     /// Missing or unreadable config falls back to defaults rather than failing startup.
     pub fn load() -> Self {
-        std::fs::read_to_string(Self::path()).ok().and_then(|s| toml::from_str(&s).ok()).unwrap_or_default()
+        let mut cfg: Self = std::fs::read_to_string(Self::path()).ok().and_then(|s| toml::from_str(&s).ok()).unwrap_or_default();
+        cfg.poll_secs = nearest_poll_secs(cfg.poll_secs);
+        cfg
     }
 
     pub fn save(&self) -> Result<()> {
@@ -275,6 +284,15 @@ mod tests {
     fn round_trips_and_defaults_missing_fields() {
         let cfg: Config = toml::from_str("poll_secs = 30\n[[devices]]\nid = \"x\"\nname = \"X\"\nkind = \"Mouse\"\n").unwrap();
         assert_eq!(cfg.poll_secs, 30);
+    }
+
+    #[test]
+    fn poll_secs_snaps_to_a_choice() {
+        assert_eq!(nearest_poll_secs(60), 30);
+        assert_eq!(nearest_poll_secs(0), 1);
+        assert_eq!(nearest_poll_secs(4), 3);
+        assert_eq!(nearest_poll_secs(7), 5);
+        assert_eq!(nearest_poll_secs(10), 10);
         assert_eq!(cfg.low_threshold, 20);
         assert!(cfg.devices[0].show);
         let again: Config = toml::from_str(&toml::to_string_pretty(&cfg).unwrap()).unwrap();
