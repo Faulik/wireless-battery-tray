@@ -1,0 +1,5 @@
+name = "wireless-battery-tray-site"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+routes = [{ pattern = "battery.faulcloud.work/*", zone_name = "faulcloud.work" }]

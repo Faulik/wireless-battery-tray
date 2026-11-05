@@ -3,7 +3,7 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ["docs/**"]
+    paths: ["docs/**", "scripts/site_markdown.py"]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +25,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/configure-pages@v5
+
+      # Markdown twin of the page for AI agents: /index.md and /llms-full.txt,
+      # generated from docs/index.html so the two never drift apart.
+      - run: python3 scripts/site_markdown.py docs
 
       - uses: actions/upload-pages-artifact@v3
         with:

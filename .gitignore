@@ -1,3 +1,5 @@
 /target
 *.bundle
 device-inventory.md
+docs/index.md
+docs/llms-full.txt
