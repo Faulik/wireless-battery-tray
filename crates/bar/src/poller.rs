@@ -10,6 +10,11 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use crate::config::{save_snapshot, Reading};
 
+/// Longest a round waits for providers. A sleeping Logitech device costs about a second per
+/// request, so a healthy round stays well under this; a provider still running past it is
+/// reported as an error and skipped until it returns.
+const POLL_TIMEOUT: Duration = Duration::from_secs(20);
+
 pub enum Command {
     RefreshNow,
     SetInterval(u64),
@@ -30,11 +35,11 @@ impl Poller {
         std::thread::Builder::new()
             .name("poller".into())
             .spawn(move || {
-                let providers = providers::all();
+                let mut providers = battery_core::Providers::new(providers::all());
                 let mut interval = Duration::from_secs(interval_secs.max(1));
                 loop {
                     let started = Instant::now();
-                    let snap = battery_core::poll_all(&providers);
+                    let snap = providers.poll_all(POLL_TIMEOUT);
                     let took = started.elapsed();
                     for (p, e) in &snap.errors {
                         eprintln!("poll: {p}: {e}");
