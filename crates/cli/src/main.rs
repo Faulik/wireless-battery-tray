@@ -17,7 +17,8 @@ struct JsonError<'a> {
 
 fn main() {
     let json = std::env::args().skip(1).any(|a| a == "--json");
-    let snap = battery_core::poll_all(&providers::all());
+    // A provider that hangs is reported as an error; its thread ends with the process.
+    let snap = battery_core::Providers::new(providers::all()).poll_all(std::time::Duration::from_secs(20));
 
     if json {
         let out = JsonOut { batteries: &snap.batteries, errors: snap.errors.iter().map(|(p, e)| JsonError { provider: p, error: e }).collect() };

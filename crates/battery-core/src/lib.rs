@@ -1,5 +1,9 @@
 //! Core types shared by every battery provider and front-end.
 
+use std::sync::mpsc::{self, RecvTimeoutError, TryRecvError};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,24 +67,79 @@ pub struct Snapshot {
     pub errors: Vec<(&'static str, String)>,
 }
 
-pub fn poll_all(providers: &[Box<dyn Provider>]) -> Snapshot {
-    let mut tagged = Vec::new();
-    let mut errors = Vec::new();
-    for p in providers {
-        let started = std::time::Instant::now();
-        let result = p.poll();
-        if std::env::var_os("BATTERIES_DEBUG").is_some() {
-            eprintln!("{}: {:?}", p.name(), started.elapsed());
-        }
-        match result {
-            Ok(list) => tagged.extend(list.into_iter().map(|mut b| {
-                (b.kind, b.kind_source) = refine_kind(&b.name, b.kind, b.kind_source);
-                (p.priority(), b)
-            })),
-            Err(e) => errors.push((p.name(), format!("{e:#}"))),
-        }
+/// Runs each provider on its own thread with a deadline, so one that hangs (a WinRT call that
+/// never completes after the Bluetooth stack resets on resume from sleep, say) can't hold up the
+/// others or the caller. A provider still stuck from an earlier round is skipped until it returns.
+pub struct Providers {
+    entries: Vec<Entry>,
+}
+
+struct Entry {
+    provider: Arc<dyn Provider + Send + Sync>,
+    /// Set while a poll of this provider is running; holds the channel its result arrives on.
+    pending: Option<mpsc::Receiver<anyhow::Result<Vec<Battery>>>>,
+}
+
+impl Providers {
+    pub fn new(providers: Vec<Arc<dyn Provider + Send + Sync>>) -> Self {
+        Self { entries: providers.into_iter().map(|provider| Entry { provider, pending: None }).collect() }
     }
-    Snapshot { batteries: merge(tagged), errors }
+
+    /// Polls every provider in parallel and waits at most `timeout` for all of them.
+    pub fn poll_all(&mut self, timeout: Duration) -> Snapshot {
+        let deadline = Instant::now() + timeout;
+        let mut errors = Vec::new();
+        for e in &mut self.entries {
+            if let Some(rx) = &e.pending {
+                match rx.try_recv() {
+                    // Finished late: that result is stale, poll again below.
+                    Ok(_) | Err(TryRecvError::Disconnected) => e.pending = None,
+                    Err(TryRecvError::Empty) => {
+                        errors.push((e.provider.name(), "still busy from an earlier poll; skipped".to_string()));
+                        continue;
+                    }
+                }
+            }
+            let (tx, rx) = mpsc::channel();
+            let p = e.provider.clone();
+            let spawned = std::thread::Builder::new().name(format!("poll-{}", p.name())).spawn(move || {
+                let started = Instant::now();
+                let result = p.poll();
+                if std::env::var_os("BATTERIES_DEBUG").is_some() {
+                    eprintln!("{}: {:?}", p.name(), started.elapsed());
+                }
+                let _ = tx.send(result);
+            });
+            match spawned {
+                Ok(_) => e.pending = Some(rx),
+                Err(err) => errors.push((e.provider.name(), format!("spawn poll thread: {err}"))),
+            }
+        }
+
+        let mut tagged = Vec::new();
+        for e in &mut self.entries {
+            let Some(rx) = &e.pending else { continue };
+            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(result) => {
+                    e.pending = None;
+                    match result {
+                        Ok(list) => tagged.extend(list.into_iter().map(|mut b| {
+                            (b.kind, b.kind_source) = refine_kind(&b.name, b.kind, b.kind_source);
+                            (e.provider.priority(), b)
+                        })),
+                        Err(err) => errors.push((e.provider.name(), format!("{err:#}"))),
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => errors.push((e.provider.name(), format!("no answer within {timeout:?}"))),
+                Err(RecvTimeoutError::Disconnected) => {
+                    e.pending = None;
+                    errors.push((e.provider.name(), "poll thread panicked".to_string()));
+                }
+            }
+        }
+        // Collected in provider order, whichever thread finished first.
+        Snapshot { batteries: merge(tagged), errors }
+    }
 }
 
 /// Per `device_id`, keep only the entries from the highest-priority provider that reported it,
@@ -139,5 +198,44 @@ mod tests {
     fn duplicate_parts_are_dropped() {
         let merged = merge(vec![(1, b("x", None, 1, "p")), (1, b("x", None, 2, "p"))]);
         assert_eq!(merged.len(), 1);
+    }
+
+    struct Fixed(&'static str, Duration);
+
+    impl Provider for Fixed {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+        fn priority(&self) -> u8 {
+            1
+        }
+        fn poll(&self) -> anyhow::Result<Vec<Battery>> {
+            std::thread::sleep(self.1);
+            Ok(vec![b(self.0, None, 50, "test")])
+        }
+    }
+
+    #[test]
+    fn a_hung_provider_does_not_block_the_others() {
+        let mut ps = Providers::new(vec![Arc::new(Fixed("slow", Duration::from_secs(3))), Arc::new(Fixed("fast", Duration::ZERO))]);
+        let started = Instant::now();
+        let snap = ps.poll_all(Duration::from_millis(300));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(snap.batteries.iter().map(|b| b.device_id.as_str()).collect::<Vec<_>>(), ["fast"]);
+        assert_eq!(snap.errors.len(), 1);
+        assert_eq!(snap.errors[0].0, "slow");
+
+        // Still running: skipped rather than started a second time.
+        let snap = ps.poll_all(Duration::from_millis(300));
+        assert_eq!(snap.batteries.len(), 1);
+        assert!(snap.errors[0].1.contains("still busy"));
+    }
+
+    #[test]
+    fn results_keep_provider_order() {
+        let mut ps = Providers::new(vec![Arc::new(Fixed("a", Duration::from_millis(100))), Arc::new(Fixed("b", Duration::ZERO))]);
+        let snap = ps.poll_all(Duration::from_secs(5));
+        assert_eq!(snap.batteries.iter().map(|b| b.device_id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+        assert!(snap.errors.is_empty());
     }
 }

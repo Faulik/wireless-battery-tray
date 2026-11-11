@@ -8,13 +8,35 @@
 //! that the Windows HID driver owns. Values are read uncached while the device is connected;
 //! when it is not, the value Windows cached from the last connection is returned and the entry
 //! is marked disconnected.
+//!
+//! Every WinRT call is awaited with a deadline: right after resume from hibernate the Bluetooth
+//! stack can leave one pending forever, which used to freeze the whole poll.
 
-use anyhow::Result;
+use std::time::{Duration, Instant};
+
+use anyhow::{bail, Result};
 use battery_core::{Battery, Kind, KindSource, Level, Provider};
 use windows::Devices::Bluetooth::GenericAttributeProfile::{GattCharacteristicUuids, GattCommunicationStatus, GattServiceUuids, GattSession};
 use windows::Devices::Bluetooth::{BluetoothCacheMode, BluetoothConnectionStatus, BluetoothLEDevice};
 use windows::Devices::Enumeration::DeviceInformation;
+use windows::Foundation::{AsyncStatus, IAsyncOperation};
 use windows::Storage::Streams::DataReader;
+
+/// Longest one WinRT call may take. Uncached reads from a sleeping device take a few seconds.
+const OP_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Waits for `op` like `get()`, but gives up and cancels it after `OP_TIMEOUT`.
+fn wait<T: windows::core::RuntimeType + 'static>(op: IAsyncOperation<T>) -> Result<T> {
+    let deadline = Instant::now() + OP_TIMEOUT;
+    while op.Status()? == AsyncStatus::Started {
+        if Instant::now() >= deadline {
+            let _ = op.Cancel();
+            bail!("Bluetooth call got no answer within {OP_TIMEOUT:?}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(op.GetResults()?)
+}
 
 pub struct GattProvider;
 
@@ -27,10 +49,10 @@ impl Provider for GattProvider {
     }
     fn poll(&self) -> Result<Vec<Battery>> {
         let selector = BluetoothLEDevice::GetDeviceSelectorFromPairingState(true)?;
-        let infos = DeviceInformation::FindAllAsyncAqsFilter(&selector)?.get()?;
+        let infos = wait(DeviceInformation::FindAllAsyncAqsFilter(&selector)?)?;
         let mut out = Vec::new();
         for info in infos {
-            let Ok(dev) = BluetoothLEDevice::FromIdAsync(&info.Id()?)?.get() else {
+            let Ok(dev) = wait(BluetoothLEDevice::FromIdAsync(&info.Id()?)?) else {
                 continue;
             };
             out.extend(read_device(&dev)?);
@@ -46,14 +68,14 @@ fn read_device(dev: &BluetoothLEDevice) -> Result<Vec<Battery>> {
 
     // Holds the link open for the uncached reads below; dropped (released) when we return.
     let _session = if connected {
-        let s = GattSession::FromDeviceIdAsync(&dev.BluetoothDeviceId()?)?.get()?;
+        let s = wait(GattSession::FromDeviceIdAsync(&dev.BluetoothDeviceId()?)?)?;
         s.SetMaintainConnection(true)?;
         Some(s)
     } else {
         None
     };
 
-    let services = dev.GetGattServicesForUuidWithCacheModeAsync(GattServiceUuids::Battery()?, BluetoothCacheMode::Cached)?.get()?;
+    let services = wait(dev.GetGattServicesForUuidWithCacheModeAsync(GattServiceUuids::Battery()?, BluetoothCacheMode::Cached)?)?;
     if services.Status()? != GattCommunicationStatus::Success {
         debug!("gatt: {name} battery service discovery: {:?}", services.Status()?);
         return Ok(Vec::new());
@@ -62,14 +84,14 @@ fn read_device(dev: &BluetoothLEDevice) -> Result<Vec<Battery>> {
     let modes: &[BluetoothCacheMode] = if connected { &[BluetoothCacheMode::Uncached, BluetoothCacheMode::Cached] } else { &[BluetoothCacheMode::Cached] };
     let mut levels = Vec::new();
     for service in services.Services()? {
-        let chars = service.GetCharacteristicsForUuidWithCacheModeAsync(GattCharacteristicUuids::BatteryLevel()?, BluetoothCacheMode::Cached)?.get()?;
+        let chars = wait(service.GetCharacteristicsForUuidWithCacheModeAsync(GattCharacteristicUuids::BatteryLevel()?, BluetoothCacheMode::Cached)?)?;
         if chars.Status()? != GattCommunicationStatus::Success {
             continue;
         }
         for c in chars.Characteristics()? {
             let label = c.UserDescription().map(|s| s.to_string()).unwrap_or_default();
             for &mode in modes {
-                let read = c.ReadValueWithCacheModeAsync(mode)?.get()?;
+                let read = wait(c.ReadValueWithCacheModeAsync(mode)?)?;
                 debug!("gatt: {name} handle {} {label:?} read {mode:?}: {:?}", c.AttributeHandle()?, read.Status()?);
                 if read.Status()? == GattCommunicationStatus::Success {
                     let pct = DataReader::FromBuffer(&read.Value()?)?.ReadByte()?.min(100);
