@@ -1,5 +1,6 @@
 //! Core types shared by every battery provider and front-end.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -69,20 +70,35 @@ pub struct Snapshot {
 
 /// Runs each provider on its own thread with a deadline, so one that hangs (a WinRT call that
 /// never completes after the Bluetooth stack resets on resume from sleep, say) can't hold up the
-/// others or the caller. A provider still stuck from an earlier round is skipped until it returns.
+/// others or the caller. A provider still running from an earlier round is skipped; once it has
+/// been running longer than `restart_after`, its thread is abandoned and a fresh poll started.
 pub struct Providers {
     entries: Vec<Entry>,
+    restart_after: Duration,
 }
+
+/// A thread can't be killed, so an abandoned one lives on until its call returns. Past this many
+/// per provider, no more are abandoned and the provider waits for one of them to finish.
+const MAX_ABANDONED: usize = 4;
 
 struct Entry {
     provider: Arc<dyn Provider + Send + Sync>,
-    /// Set while a poll of this provider is running; holds the channel its result arrives on.
-    pending: Option<mpsc::Receiver<anyhow::Result<Vec<Battery>>>>,
+    /// Set while a poll of this provider is running: its result channel and when it started.
+    pending: Option<(mpsc::Receiver<anyhow::Result<Vec<Battery>>>, Instant)>,
+    /// Abandoned poll threads of this provider that haven't returned yet.
+    abandoned: Arc<AtomicUsize>,
 }
 
 impl Providers {
     pub fn new(providers: Vec<Arc<dyn Provider + Send + Sync>>) -> Self {
-        Self { entries: providers.into_iter().map(|provider| Entry { provider, pending: None }).collect() }
+        let entries = providers.into_iter().map(|provider| Entry { provider, pending: None, abandoned: Arc::default() }).collect();
+        Self { entries, restart_after: Duration::from_secs(60) }
+    }
+
+    /// How long a poll may run before it is abandoned and the provider restarted (default 60 s).
+    pub fn restart_after(mut self, d: Duration) -> Self {
+        self.restart_after = d;
+        self
     }
 
     /// Polls every provider in parallel and waits at most `timeout` for all of them.
@@ -90,10 +106,16 @@ impl Providers {
         let deadline = Instant::now() + timeout;
         let mut errors = Vec::new();
         for e in &mut self.entries {
-            if let Some(rx) = &e.pending {
+            if let Some((rx, started)) = &e.pending {
                 match rx.try_recv() {
                     // Finished late: that result is stale, poll again below.
                     Ok(_) | Err(TryRecvError::Disconnected) => e.pending = None,
+                    Err(TryRecvError::Empty) if started.elapsed() >= self.restart_after && e.abandoned.load(Ordering::SeqCst) < MAX_ABANDONED => {
+                        // Dropping the receiver marks the thread abandoned; it decrements the count when it returns.
+                        e.abandoned.fetch_add(1, Ordering::SeqCst);
+                        errors.push((e.provider.name(), format!("hung for {:?}; restarted", started.elapsed())));
+                        e.pending = None;
+                    }
                     Err(TryRecvError::Empty) => {
                         errors.push((e.provider.name(), "still busy from an earlier poll; skipped".to_string()));
                         continue;
@@ -102,23 +124,26 @@ impl Providers {
             }
             let (tx, rx) = mpsc::channel();
             let p = e.provider.clone();
+            let abandoned = e.abandoned.clone();
             let spawned = std::thread::Builder::new().name(format!("poll-{}", p.name())).spawn(move || {
                 let started = Instant::now();
                 let result = p.poll();
                 if std::env::var_os("BATTERIES_DEBUG").is_some() {
                     eprintln!("{}: {:?}", p.name(), started.elapsed());
                 }
-                let _ = tx.send(result);
+                if tx.send(result).is_err() {
+                    abandoned.fetch_sub(1, Ordering::SeqCst);
+                }
             });
             match spawned {
-                Ok(_) => e.pending = Some(rx),
+                Ok(_) => e.pending = Some((rx, Instant::now())),
                 Err(err) => errors.push((e.provider.name(), format!("spawn poll thread: {err}"))),
             }
         }
 
         let mut tagged = Vec::new();
         for e in &mut self.entries {
-            let Some(rx) = &e.pending else { continue };
+            let Some((rx, _)) = &e.pending else { continue };
             match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                 Ok(result) => {
                     e.pending = None;
@@ -237,5 +262,33 @@ mod tests {
         let snap = ps.poll_all(Duration::from_secs(5));
         assert_eq!(snap.batteries.iter().map(|b| b.device_id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
         assert!(snap.errors.is_empty());
+    }
+
+    /// Hangs on its first poll only, like a call stuck once after resume.
+    struct HangsOnce(std::sync::atomic::AtomicBool);
+
+    impl Provider for HangsOnce {
+        fn name(&self) -> &'static str {
+            "hangs-once"
+        }
+        fn priority(&self) -> u8 {
+            1
+        }
+        fn poll(&self) -> anyhow::Result<Vec<Battery>> {
+            if !self.0.swap(true, Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_secs(5));
+            }
+            Ok(vec![b("dev", None, 50, "test")])
+        }
+    }
+
+    #[test]
+    fn a_hung_provider_is_restarted() {
+        let mut ps = Providers::new(vec![Arc::new(HangsOnce(Default::default()))]).restart_after(Duration::from_millis(200));
+        assert!(ps.poll_all(Duration::from_millis(50)).batteries.is_empty());
+        std::thread::sleep(Duration::from_millis(250));
+        let snap = ps.poll_all(Duration::from_secs(2));
+        assert!(snap.errors[0].1.contains("restarted"), "{:?}", snap.errors);
+        assert_eq!(snap.batteries.len(), 1);
     }
 }
