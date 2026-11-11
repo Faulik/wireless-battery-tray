@@ -1,5 +1,7 @@
 //! Battery providers. Each one only sends read/query requests to devices.
 
+use std::sync::Arc;
+
 use battery_core::Provider;
 
 /// `eprintln!` when `BATTERIES_DEBUG` is set. Defined before the `mod`s, so it is in scope in all of them.
@@ -21,17 +23,17 @@ pub mod pnp;
 pub mod steelseries;
 
 /// All providers available on this platform.
-pub fn all() -> Vec<Box<dyn Provider>> {
-    let mut v: Vec<Box<dyn Provider>> = Vec::new();
+pub fn all() -> Vec<Arc<dyn Provider>> {
+    let mut v: Vec<Arc<dyn Provider>> = Vec::new();
     #[cfg(windows)]
     {
-        v.push(Box::new(pnp::PnpProvider));
-        v.push(Box::new(gatt::GattProvider));
+        v.push(Arc::new(pnp::PnpProvider));
+        v.push(Arc::new(gatt::GattProvider));
     }
-    v.push(Box::new(logitech::LogitechProvider));
-    v.push(Box::new(steelseries::SteelSeriesProvider));
-    v.push(Box::new(keychron::KeychronProvider));
-    v.push(Box::new(dualshock::DualShockProvider));
+    v.push(Arc::new(logitech::LogitechProvider));
+    v.push(Arc::new(steelseries::SteelSeriesProvider));
+    v.push(Arc::new(keychron::KeychronProvider));
+    v.push(Arc::new(dualshock::DualShockProvider));
     v
 }
 

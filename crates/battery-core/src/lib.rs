@@ -50,12 +50,16 @@ pub struct Battery {
     pub source: &'static str,
 }
 
-pub trait Provider {
+/// Providers run on worker threads (see [`Supervisor`]), hence `Send + Sync`.
+pub trait Provider: Send + Sync {
     fn name(&self) -> &'static str;
     /// Higher wins when two providers report the same `device_id`.
     fn priority(&self) -> u8;
     fn poll(&self) -> anyhow::Result<Vec<Battery>>;
 }
+
+mod supervisor;
+pub use supervisor::{Supervisor, DEFAULT_RETRY_AFTER, DEFAULT_TIMEOUT};
 
 /// Result of polling all providers: merged readings plus per-provider errors.
 pub struct Snapshot {
@@ -63,24 +67,10 @@ pub struct Snapshot {
     pub errors: Vec<(&'static str, String)>,
 }
 
-pub fn poll_all(providers: &[Box<dyn Provider>]) -> Snapshot {
-    let mut tagged = Vec::new();
-    let mut errors = Vec::new();
-    for p in providers {
-        let started = std::time::Instant::now();
-        let result = p.poll();
-        if std::env::var_os("BATTERIES_DEBUG").is_some() {
-            eprintln!("{}: {:?}", p.name(), started.elapsed());
-        }
-        match result {
-            Ok(list) => tagged.extend(list.into_iter().map(|mut b| {
-                (b.kind, b.kind_source) = refine_kind(&b.name, b.kind, b.kind_source);
-                (p.priority(), b)
-            })),
-            Err(e) => errors.push((p.name(), format!("{e:#}"))),
-        }
-    }
-    Snapshot { batteries: merge(tagged), errors }
+/// Polls every provider once, each for at most [`DEFAULT_TIMEOUT`]. Long-running front-ends keep a
+/// [`Supervisor`] instead, so a provider that is still stuck is skipped rather than called again.
+pub fn poll_all(providers: Vec<std::sync::Arc<dyn Provider>>) -> Snapshot {
+    Supervisor::new(providers).poll()
 }
 
 /// Per `device_id`, keep only the entries from the highest-priority provider that reported it,

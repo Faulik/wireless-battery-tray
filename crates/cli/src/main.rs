@@ -17,7 +17,7 @@ struct JsonError<'a> {
 
 fn main() {
     let json = std::env::args().skip(1).any(|a| a == "--json");
-    let snap = battery_core::poll_all(&providers::all());
+    let snap = battery_core::poll_all(providers::all());
 
     if json {
         let out = JsonOut { batteries: &snap.batteries, errors: snap.errors.iter().map(|(p, e)| JsonError { provider: p, error: e }).collect() };

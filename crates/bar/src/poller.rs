@@ -30,11 +30,13 @@ impl Poller {
         std::thread::Builder::new()
             .name("poller".into())
             .spawn(move || {
-                let providers = providers::all();
+                // Each provider gets a deadline, so one stuck in a device or OS call (Bluetooth after
+                // resume from sleep) cannot freeze the bar on stale readings.
+                let providers = battery_core::Supervisor::new(providers::all());
                 let mut interval = Duration::from_secs(interval_secs.max(1));
                 loop {
                     let started = Instant::now();
-                    let snap = battery_core::poll_all(&providers);
+                    let snap = providers.poll();
                     let took = started.elapsed();
                     for (p, e) in &snap.errors {
                         eprintln!("poll: {p}: {e}");
