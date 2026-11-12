@@ -7,6 +7,7 @@ mod autostart;
 mod config;
 mod items;
 mod poller;
+mod reader;
 mod render;
 mod settings;
 mod strip;
@@ -77,6 +78,9 @@ fn main() {
     // SAFETY: changes this process's DLL search path; takes no pointers.
     let _ = unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) };
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--reader") {
+        reader::serve();
+    }
     if args.iter().any(|a| a == "--settings") {
         let notify = args.iter().position(|a| a == "--notify").and_then(|i| args.get(i + 1)).and_then(|h| h.parse().ok());
         if let Err(e) = settings::run(notify) {

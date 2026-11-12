@@ -101,6 +101,11 @@ impl Providers {
         self
     }
 
+    /// How long the longest-running unfinished poll has been running, if any.
+    pub fn stuck_for(&self) -> Option<Duration> {
+        self.entries.iter().filter_map(|e| e.pending.as_ref().map(|(_, started)| started.elapsed())).max()
+    }
+
     /// Polls every provider in parallel and waits at most `timeout` for all of them.
     pub fn poll_all(&mut self, timeout: Duration) -> Snapshot {
         let deadline = Instant::now() + timeout;
@@ -254,6 +259,7 @@ mod tests {
         let snap = ps.poll_all(Duration::from_millis(300));
         assert_eq!(snap.batteries.len(), 1);
         assert!(snap.errors[0].1.contains("still busy"));
+        assert!(ps.stuck_for().is_some_and(|d| d >= Duration::from_millis(500)));
     }
 
     #[test]
